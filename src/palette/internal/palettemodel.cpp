@@ -1312,7 +1312,8 @@ bool FilterPaletteTreeModel::filterAcceptsRow(int sourceRow, const QModelIndex& 
 PaletteCellFilterProxyModel::PaletteCellFilterProxyModel(QObject* parent)
     : QSortFilterProxyModel(parent)
 {
-    setFilterRole(Qt::ToolTipRole);   // palette cells have no data for DisplayRole
+    // Tooltips include explanatory playback help; they are not search terms.
+    setFilterRole(Qt::AccessibleTextRole);
 }
 
 void PaletteCellFilterProxyModel::setSearchText(const QString& text)
@@ -1331,16 +1332,20 @@ bool PaletteCellFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIn
     const QModelIndex rowIndex = model->index(sourceRow, 0, sourceParent);
     const int rowCount = model->rowCount(rowIndex);
     const auto matches = [this, model](const QModelIndex& index) {
-        if (normalizedSearchText(model->data(index, Qt::ToolTipRole).toString()).contains(m_normalizedSearch)) {
+        const PaletteCell* cell = model->data(index, PaletteTreeModel::PaletteCellRole).value<const PaletteCell*>();
+        // Search names, never the tooltip: playback explanations contain
+        // words such as "ornament" and "slower" that are not cell synonyms.
+        const QString name = cell ? cell->translatedName() : model->data(index, Qt::DisplayRole).toString();
+        if (normalizedSearchText(name).contains(m_normalizedSearch)) {
             return true;
         }
-        const PaletteCell* cell = model->data(index, PaletteTreeModel::PaletteCellRole).value<const PaletteCell*>();
         QStringList aliases = historicalAliases(cell);
         if (cell) {
             aliases.append(cell->searchAliases.split(QLatin1Char(';'), Qt::SkipEmptyParts));
         }
-        for (const QString& alias : aliases) {
-            const QString normalizedAlias = normalizedSearchText(alias.trimmed());
+        for (const QString& rawAlias : aliases) {
+            const QString alias = rawAlias.trimmed();
+            const QString normalizedAlias = normalizedSearchText(alias);
             // A word within a qualified instruction is not itself a synonym:
             // searching "langsamer" must not select "allmählich langsamer".
             const bool matchesAlias = alias.contains(QLatin1Char(' '))

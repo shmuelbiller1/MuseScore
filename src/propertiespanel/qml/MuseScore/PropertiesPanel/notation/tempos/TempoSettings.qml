@@ -47,7 +47,7 @@ Column {
         id: followWrittenTempoCheckbox
         text: qsTrc("propertiespanel", "Follow written tempo")
         propertyItem: root.model ? root.model.followText : null
-        enabled: root.model ? !root.model.relativeTempo : false
+        enabled: root.model ? !root.model.isEmpty : false
 
         navigation.name: "FollowCheckBox"
         navigation.panel: root.navigationPanel
@@ -58,7 +58,9 @@ Column {
         titleText: qsTrc("propertiespanel", "Relative to preceding tempo")
         propertyItem: root.model ? root.model.relativeFactor : null
         visible: root.model ? root.model.relativeTempo : false
-        enabled: root.model ? !root.model.isEmpty : false
+        // Metric modulations follow the written equation by default. Turn
+        // that off before overriding its computed relative factor.
+        enabled: root.model ? !root.model.isEmpty && !followWrittenTempoCheckbox.checked : false
         minValue: 0.1
         maxValue: 1000
         step: 0.1

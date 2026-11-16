@@ -163,6 +163,29 @@ TEST_F(Engraving_TempoTimelineTests, FLAT_TEMPO_CHANGES)
                 TIME_ERROR);
 }
 
+TEST_F(Engraving_TempoTimelineTests, FLAT_EASED_RAMP_AFTER_EXPLICIT_TEMPO)
+{
+    // An eased 100% ramp starting at the 60 BPM marking must not interpolate
+    // backwards from the unrelated 120 BPM marking at tick zero.
+    for (const AutomationEase ease : { AutomationEase { muse::real_t::make(0.5), muse::real_t::make(0.25) },
+                                       AutomationEase { muse::real_t::make(0.5), muse::real_t::make(0.75) } }) {
+        AutomationCurve curve {
+            { 0, flatTempo(120.0) },
+            { 1920, flatTempo(60.0) },
+            { 3840, rampArrival(60.0, 60.0, ease) },
+        };
+        TempoTimeline timeline;
+        timeline.rebuild(curve, {});
+
+        ASSERT_EQ(timeline.points().size(), 3u);
+        EXPECT_NEAR(timeline.tempo(960).toBPM().val, 120.0, TEMPO_ERROR);
+        EXPECT_NEAR(timeline.tempo(1920).toBPM().val, 60.0, TEMPO_ERROR);
+        EXPECT_NEAR(timeline.tempo(2880).toBPM().val, 60.0, TEMPO_ERROR);
+        EXPECT_NEAR(timeline.tempo(3840).toBPM().val, 60.0, TEMPO_ERROR);
+        EXPECT_NEAR(timeline.utick2utime(3840), 6.0, TIME_ERROR);
+    }
+}
+
 /**
  * @brief Engraving_TempoTimelineTests_GRADUAL_TEMPO_CHANGE_RAMP_AND_OVERRIDE
  * @details A ritardando ramps from 120 BPM to 90 BPM across ticks 0-3840 (factor 0.75, per
