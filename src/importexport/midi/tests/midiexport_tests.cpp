@@ -20,12 +20,15 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include <gtest/gtest.h>
 
+#include <QBuffer>
 #include <QString>
 
 #include "global/io/ifilesystem.h"
@@ -42,6 +45,7 @@
 #include "engraving/tests/utils/scorerw.h"
 
 #include "importexport/midi/internal/midiexport/exportmidi.h"
+#include "importexport/midi/internal/midishared/midifile.h"
 
 #include "utils/smfyamlserializer.h"
 
@@ -216,6 +220,59 @@ TEST_F(MidiExportTests, midiMutedUnison) {
 
 TEST_F(MidiExportTests, midiMeasureRepeats) {
     exportAndCompareWithRef("testMeasureRepeats");
+}
+
+TEST_F(MidiExportTests, HistoricalTempo_18Parts_RelativeRampAndPlaybackMultiplier)
+{
+    // Shared native fixture used by the automation tests. This exercises the
+    // actual MIDI file writer and parser, not just the engraving tempo map.
+    const String path = ScoreRW::rootPath() + u"/../../../engraving/tests/automation/data/tempo_relative_18_parts.mscx";
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(path, true));
+    ASSERT_TRUE(score);
+    ASSERT_EQ(score->nstaves(), 18u);
+    score->rebuildMidiMapping();
+
+    for (const double multiplier : { 1.0, 2.0 }) {
+        score->setTempoMultiplier(BeatsPerSecond(multiplier));
+        QBuffer bytes;
+        ASSERT_TRUE(bytes.open(QIODevice::ReadWrite));
+        ExportMidi exporter(score.get());
+        ASSERT_TRUE(exporter.write(&bytes, /*expandRepeats*/ true, /*exportRPNs*/ true));
+        ASSERT_TRUE(bytes.seek(0));
+        MidiFile midi;
+        ASSERT_TRUE(midi.read(&bytes));
+        ASSERT_EQ(midi.tracks().size(), 18u);
+
+        std::map<int, int> tempoMicros;
+        for (const auto& [tick, event] : midi.tracks().front().events()) {
+            if (event.type() != ME_META || event.metaType() != META_TEMPO) {
+                continue;
+            }
+            ASSERT_EQ(event.len(), 3);
+            const uchar* data = event.edata();
+            tempoMicros[tick] = (int(data[0]) << 16) | (int(data[1]) << 8) | int(data[2]);
+        }
+        for (const auto [tick, bpm] : { std::pair { 0, 180.0 }, std::pair { 1920, 162.0 },
+                                        std::pair { 2880, 141.75 }, std::pair { 3840, 81.0 },
+                                        std::pair { 5760, 162.0 }, std::pair { 7680, 180.0 } }) {
+            auto it = tempoMicros.find(tick);
+            ASSERT_NE(it, tempoMicros.end()) << "Missing MIDI tempo event at tick " << tick;
+            EXPECT_NEAR(60000000.0 / it->second, bpm * multiplier, 0.02);
+        }
+
+        // Independently pitched parts must retain an onset in every track.
+        for (size_t staff = 0; staff < 18; ++staff) {
+            bool hasOpeningNote = false;
+            for (const auto& [tick, event] : midi.tracks()[staff].events()) {
+                if (tick == 0 && event.type() == ME_NOTEON && event.velo() > 0
+                    && event.pitch() == 48 + staff) {
+                    hasOpeningNote = true;
+                    break;
+                }
+            }
+            EXPECT_TRUE(hasOpeningNote) << "Missing opening note on staff " << staff;
+        }
+    }
 }
 
 TEST_F(MidiExportTests, midi184376ExportMidiInitialKeySi) {

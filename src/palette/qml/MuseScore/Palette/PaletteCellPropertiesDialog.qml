@@ -81,6 +81,21 @@ StyledDialogView {
             navigation.order: 1
         }
 
+        StyledTextLabel {
+            text: qsTrc("palette", "Search aliases (separate with semicolons)")
+            font: ui.theme.bodyBoldFont
+        }
+
+        TextInputField {
+            currentText: propertiesModel.searchAliases
+            onTextChanged: function(newTextValue) {
+                propertiesModel.searchAliases = newTextValue
+            }
+
+            navigation.panel: navPanel
+            navigation.order: 2
+        }
+
         SeparatorLine { anchors.margins: -root.margins }
 
         StyledTextLabel {
@@ -109,7 +124,7 @@ StyledDialogView {
                 }
 
                 navigation.panel: navPanel
-                navigation.order: 2
+                navigation.order: 3
             }
 
             PalettePropertyItem {
@@ -125,7 +140,7 @@ StyledDialogView {
                 }
 
                 navigation.panel: navPanel
-                navigation.order: 3
+                navigation.order: 4
             }
 
             PalettePropertyItem {
@@ -140,7 +155,7 @@ StyledDialogView {
                 }
 
                 navigation.panel: navPanel
-                navigation.order: 4
+                navigation.order: 5
             }
         }
 
@@ -155,7 +170,7 @@ StyledDialogView {
             }
 
             navigation.panel: navPanel
-            navigation.order: 5
+            navigation.order: 6
         }
 
         ButtonBox {

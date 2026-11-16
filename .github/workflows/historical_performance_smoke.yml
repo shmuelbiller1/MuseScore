@@ -1,0 +1,19 @@
+name: 'Check: Historical Performance Smoke'
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out score and pinned framework
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Validate MPE easing and synthetic fixtures
+        run: bash tools/historical_performance/smoke.sh

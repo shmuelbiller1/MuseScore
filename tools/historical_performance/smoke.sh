@@ -12,7 +12,9 @@ g++ -std=c++20 -I muse/framework -I muse/framework/global -I muse/framework/thir
 "$tmp_dir/ease_probe"
 python3 docs/historical-performance/test-scores/expand_to_18.py \
     docs/historical-performance/test-scores/two-voices.musicxml "$tmp_dir/18-parts.musicxml"
-python3 - "$tmp_dir/18-parts.musicxml" <<'PY'
+python3 docs/historical-performance/test-scores/expand_native_to_18.py \
+    src/engraving/tests/automation/data/tempo_relative.mscx "$tmp_dir/18-parts.mscx"
+python3 - "$tmp_dir/18-parts.musicxml" "$tmp_dir/18-parts.mscx" <<'PY'
 from pathlib import Path
 import sys
 from xml.etree import ElementTree as ET
@@ -28,6 +30,16 @@ xml = ET.parse(Path(sys.argv[1])).getroot()
 assert len(xml.findall('part')) == 18
 for part in xml.findall('part'):
     assert len(part.findall('measure')) == 3
-print('XML fixture checks: one relative marking, one eased ramp, 18 parts with three measures each')
+native = ET.parse(Path(sys.argv[2])).getroot().find('Score')
+assert len(native.findall('Part')) == len(native.findall('Staff')) == 18
+assert len(list(native.iter('Tempo'))) == 4  # never duplicate the global markings
+assert len(native.findall('./SpannerMap/GradualTempoChange')) == 1
+assert len(native.findall('.//Fermata')) == 1
+ids = [element.text for element in native.iter('eid')]
+assert len(ids) == len(set(ids))
+for staff in native.findall('Staff'):
+    assert len(staff.findall('Measure')) == 6
+    assert all(len(m.findall('./voice/Chord/Note')) == 1 for m in staff.findall('Measure'))
+print('XML fixture checks: one relative marking, one eased ramp, 18 distinct six-measure native parts')
 PY
 git diff --check

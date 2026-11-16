@@ -31,7 +31,9 @@
 #include "engraving/dom/actionicon.h"
 #include "engraving/dom/beam.h"
 #include "engraving/dom/chordrest.h"
+#include "engraving/dom/breath.h"
 #include "engraving/dom/dynamic.h"
+#include "engraving/dom/fermata.h"
 #include "engraving/dom/gradualtempochange.h"
 #include "engraving/dom/hairpin.h"
 #include "engraving/dom/note.h"
@@ -114,6 +116,18 @@ QStringList historicalAliases(const PaletteCell* cell)
                      QStringLiteral("decresc."), QStringLiteral("gradually softer") };
         default: break;
         }
+    } else if (cell->element->isFermata()) {
+        if (toFermata(cell->element.get())->symId() == SymId::fermataAbove) {
+            return { QStringLiteral("corona"), QStringLiteral("hold"), QStringLiteral("fermata") };
+        }
+    } else if (cell->element->isBreath()) {
+        const Breath* breath = toBreath(cell->element.get());
+        if (breath->symId() == SymId::breathMarkComma) {
+            return { QStringLiteral("breath mark"), QStringLiteral("atemzeichen") };
+        }
+        if (breath->symId() == SymId::caesura) {
+            return { QStringLiteral("caesura"), QStringLiteral("zäsur"), QStringLiteral("zaesur") };
+        }
     } else if (cell->element->isOrnament()) {
         switch (toOrnament(cell->element.get())->symId()) {
         case SymId::ornamentTrill: return { QStringLiteral("trillo"), QStringLiteral("triller") };
@@ -189,6 +203,14 @@ QString markingPlaybackHelp(const PaletteCell* cell)
     }
     if (cell->element->isHairpin()) {
         return muse::qtrc("palette", "Playback: partial — gradual dynamics automation; set span and target level. Sound profile affects the result.");
+    }
+    if (cell->element->isFermata()) {
+        return muse::qtrc("palette", "Playback: partial — shared duration stretch; adjust the hold for this passage and inspect overlapping parts.");
+    }
+    if (cell->element->isBreath()) {
+        return toBreath(cell->element.get())->pause() > 0.0
+               ? muse::qtrc("palette", "Playback: shared pause with editable duration; do not assume a universal length.")
+               : muse::qtrc("palette", "Playback: visual breath symbol by default; set a pause duration to affect timing.");
     }
     if (cell->element->isOrnament() || cell->element->isArticulation()) {
         return muse::qtrc("palette", "Playback: partial; rendering depends on the ornament/articulation type and instrument profile. Audition this part.");
@@ -1301,8 +1323,12 @@ bool PaletteCellFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIn
             return true;
         }
         const PaletteCell* cell = model->data(index, PaletteTreeModel::PaletteCellRole).value<const PaletteCell*>();
-        for (const QString& alias : historicalAliases(cell)) {
-            const QString normalizedAlias = normalizedSearchText(alias);
+        QStringList aliases = historicalAliases(cell);
+        if (cell) {
+            aliases.append(cell->searchAliases.split(QLatin1Char(';'), Qt::SkipEmptyParts));
+        }
+        for (const QString& alias : aliases) {
+            const QString normalizedAlias = normalizedSearchText(alias.trimmed());
             // A word within a qualified instruction is not itself a synonym:
             // searching "langsamer" must not select "allmählich langsamer".
             const bool matchesAlias = alias.contains(QLatin1Char(' '))

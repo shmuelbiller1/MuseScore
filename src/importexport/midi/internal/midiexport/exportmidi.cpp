@@ -190,7 +190,9 @@ void ExportMidi::writeHeader(const CompatMidiRendererInternal::Context& context)
         //
         // compute midi tempo: microseconds / quarter note
         //
-        int tempo = lrint((1.0 / bps * tempoMultiplier.val) * 1000000.0);
+        // Timeline bps are unmultiplied. A playback multiplier increases
+        // effective bps, so it must *decrease* microseconds per quarter note.
+        int tempo = lrint((1.0 / (bps * tempoMultiplier.val)) * 1000000.0);
 
         ev.setMetaType(META_TEMPO);
         ev.setLen(3);

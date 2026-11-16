@@ -74,6 +74,7 @@ public:
 
     struct PaletteCellConfig {
         QString name;
+        QString searchAliases; // semicolon-separated, local palette metadata
         double xOffset = 0;
         double yOffset = 0;
         double scale = 0;

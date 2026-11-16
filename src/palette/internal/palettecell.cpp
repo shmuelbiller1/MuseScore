@@ -212,6 +212,8 @@ bool PaletteCell::read(XmlReader& e, bool pasteMode)
             mag = e.readDouble();
         } else if (s == "tag") {
             tag = e.readText();
+        } else if (s == "searchAliases") {
+            searchAliases = e.readText();
         }
         // added on palettes rework
         // TODO: remove or leave to switch from using attributes later?
@@ -293,6 +295,9 @@ void PaletteCell::write(XmlWriter& xml, bool pasteMode) const
     }
     if (!tag.isEmpty()) {
         xml.tag("tag", tag);
+    }
+    if (!searchAliases.isEmpty()) {
+        xml.tag("searchAliases", searchAliases);
     }
     if (!RealIsEqual(mag, 1.0)) {
         xml.tag("mag", mag);

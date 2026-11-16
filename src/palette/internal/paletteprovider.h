@@ -268,6 +268,7 @@ public:
         m_userPaletteModel->retranslate();
         m_masterPaletteModel->retranslate();
         m_defaultPaletteModel->retranslate();
+        rebuildSearchPalette();
     }
 
     bool isSinglePalette() const;
@@ -285,6 +286,7 @@ signals:
 private slots:
     void notifyAboutUserPaletteChanged()
     {
+        rebuildSearchPalette();
         m_userPaletteChanged.notify();
         emit userPaletteChanged();
     }
@@ -304,9 +306,11 @@ private:
     QString getPaletteFilename(bool open, const QString& name = "") const;
 
     void doResetPalette(const QModelIndex& index);
+    void rebuildSearchPalette();
 
     PaletteTreeModel* m_userPaletteModel = nullptr;
     PaletteTreeModel* m_masterPaletteModel = nullptr;
+    PaletteTreeModel* m_searchPaletteModel = nullptr; // master cells plus local user-alias cells
     PaletteTreeModel* m_defaultPaletteModel = nullptr; // palette used by "Reset palette" action
 
     muse::async::Notification m_userPaletteChanged;

@@ -94,6 +94,9 @@ public:
     QString id;
 
     QString name; // used for tool tip
+    // User-supplied search terms, separated by semicolons. This is palette
+    // metadata only: it never replaces the printed text or playback settings.
+    QString searchAliases;
     qreal mag { 1.0 };
     double xoffset { 0.0 }; // in spatium units of "gscore"
     double yoffset { 0.0 };

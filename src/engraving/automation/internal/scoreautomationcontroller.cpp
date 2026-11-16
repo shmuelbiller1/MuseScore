@@ -46,6 +46,7 @@
 #include "engraving/automation/tempovalues.h"
 
 #include "engraving/types/constants.h"
+#include "engraving/types/typesconv.h"
 
 #include "global/containers.h"
 #include "global/realfn.h"
@@ -82,8 +83,8 @@ static AutomationPoint::Ease changeMethodToEase(ChangeMethod method)
     case ChangeMethod::EASE_OUT:
         return { real_t::make(0.5), real_t::make(0.75) };
     default:
-        // EXPONENTIAL and EASE_IN_OUT need more than one bend to be
-        // represented faithfully; preserve their legacy linear behavior.
+        // NORMAL is linear; EXPONENTIAL/EASE_IN_OUT use piecewise points
+        // below because they cannot be represented by a single MPE bend.
         return AutomationPoint::Ease::none();
     }
 }
@@ -1247,7 +1248,29 @@ void ScoreAutomationController::addGradualTempoChangePoints(const GradualTempoCh
 
     const real_t normalizedTarget = std::clamp(normalizedCurrent * tempoChange->tempoChangeFactor(),
                                                MIN_NORMALIZED_TEMPO, MAX_NORMALIZED_TEMPO);
-    const AutomationPoint::ExplicitArrival arrival { normalizedTarget, changeMethodToEase(tempoChange->easingMethod()) };
+    const ChangeMethod method = tempoChange->easingMethod();
+    // One MPE bend cannot express the symmetric or exponential methods. Use
+    // the existing engraving easing function at 16 intervals and interpolate
+    // between those points. Don't insert intermediate points over an authored
+    // marking or another ramp: that overlap still needs a separate policy.
+    const auto interior = ctx.tempoCurve->upper_bound(tickFrom);
+    if ((method == ChangeMethod::EXPONENTIAL || method == ChangeMethod::EASE_IN_OUT)
+        && tickTo - tickFrom >= 16
+        && (interior == ctx.tempoCurve->end() || interior->first >= tickTo)) {
+        const auto samples = TConv::easingValueCurve(tickTo - tickFrom, 16, 1.0, method);
+        for (const auto& [offset, factor] : samples) {
+            const utick_t utick = tickFrom + offset;
+            if (utick <= tickFrom || utick >= tickTo) {
+                continue;
+            }
+            AutomationPoint point = makeTempoPoint(normalizedCurrent + (normalizedTarget - normalizedCurrent) * real_t::make(factor),
+                                                   itemId);
+            point.value.inValue = AutomationPoint::ExplicitArrival { point.value.outValue, AutomationPoint::Ease::none() };
+            ctx.tempoCurve->emplace(utick, point);
+            setNoRepeatTempoPoint(utick - tickOffset, point, ctx);
+        }
+    }
+    const AutomationPoint::ExplicitArrival arrival { normalizedTarget, changeMethodToEase(method) };
 
     // Don't overwrite a tempo already set at tickTo (e.g. by a tempo marking) - just record the
     // arrival so the ramp leading up to it still interpolates correctly
