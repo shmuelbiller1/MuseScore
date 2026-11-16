@@ -91,4 +91,11 @@ Column {
               .arg(root.model ? root.model.effectiveBpm : "—")
         horizontalAlignment: Text.AlignLeft
     }
+
+    StyledTextLabel {
+        width: parent.width
+        visible: root.model ? !root.model.isEmpty : false
+        text: root.model ? root.model.upcomingTempo : ""
+        horizontalAlignment: Text.AlignLeft
+    }
 }

@@ -270,6 +270,20 @@ PalettePtr PaletteCreator::newDynamicsPalette(bool defaultPalette)
         sp->appendElement(dynamic, TConv::userName(dynamic->dynamicType()));
     }
 
+    // A forceful *character* is not necessarily forte or a single-note sfz.
+    // This custom dynamic remains visual until the musician sets a velocity.
+    static const char* contextualDynamics[] = {
+        QT_TRANSLATE_NOOP("palette", "Con forza"),
+        QT_TRANSLATE_NOOP("palette", "Molto forte"),
+        QT_TRANSLATE_NOOP("palette", "Molto piano"),
+        QT_TRANSLATE_NOOP("palette", "Poco forte"),
+    };
+    for (const char* text : contextualDynamics) {
+        auto item = makeElement<Dynamic>(paletteScore());
+        item->setDynamicType(String::fromUtf8(text));
+        sp->appendElement(item, text, 1.3);
+    }
+
     static const std::vector<HairpinType> hairpins {
         HairpinType::CRESC_LINE,
         HairpinType::DIM_LINE,
@@ -285,6 +299,32 @@ PalettePtr PaletteCreator::newDynamicsPalette(bool defaultPalette)
                                : hairpinType == HairpinType::DIM_LINE ? QPointF(1, 0.0)
                                : QPointF(0, 0);
         sp->appendElement(hairpin, hairpin->subtypeUserName(), mag, offset);
+    }
+
+    // The degree modifies the *hairpin*, not a second expression on the
+    // staff. Strength and span remain independent, editable score properties.
+    struct QualifiedHairpin {
+        const char* text;
+        HairpinType type;
+        int velocityChange;
+    };
+    static const QualifiedHairpin qualifiedHairpins[] = {
+        { QT_TRANSLATE_NOOP("palette", "Poco cresc."), HairpinType::CRESC_LINE, 8 },
+        { QT_TRANSLATE_NOOP("palette", "Molto cresc."), HairpinType::CRESC_LINE, 32 },
+        { QT_TRANSLATE_NOOP("palette", "Poco dim."), HairpinType::DIM_LINE, 8 },
+        { QT_TRANSLATE_NOOP("palette", "Molto dim."), HairpinType::DIM_LINE, 32 },
+    };
+    for (const QualifiedHairpin& pattern : qualifiedHairpins) {
+        auto hairpin = Factory::makeHairpin(paletteScore()->dummy());
+        hairpin->setHairpinType(pattern.type);
+        hairpin->setVeloChange(pattern.velocityChange);
+        hairpin->setPropertyFlags(Pid::VELO_CHANGE, PropertyFlags::NOSTYLE);
+        const String text = String::fromUtf8(pattern.text);
+        hairpin->setBeginText(text);
+        hairpin->setContinueText(String(u"(%1)").arg(text));
+        hairpin->setPropertyFlags(Pid::BEGIN_TEXT, PropertyFlags::NOSTYLE);
+        hairpin->setPropertyFlags(Pid::CONTINUE_TEXT, PropertyFlags::NOSTYLE);
+        sp->appendElement(hairpin, pattern.text, 1.0);
     }
 
     return sp;
@@ -1460,6 +1500,8 @@ PalettePtr PaletteCreator::newTempoPalette(bool defaultPalette)
         { QT_TRANSLATE_NOOP("palette", "Più mosso"), 1.10 },
         { QT_TRANSLATE_NOOP("palette", "Langsamer"), 0.90 },
         { QT_TRANSLATE_NOOP("palette", "Schneller"), 1.10 },
+        { QT_TRANSLATE_NOOP("palette", "Poco meno mosso"), 0.95 },
+        { QT_TRANSLATE_NOOP("palette", "Molto più mosso"), 1.20 },
     };
     for (const RelativeTempoPattern& pattern : relativeTempoPatterns) {
         auto item = makeElement<TempoText>(paletteScore());
@@ -1469,20 +1511,48 @@ PalettePtr PaletteCreator::newTempoPalette(bool defaultPalette)
         sp->appendElement(item, pattern.text, 1.3);
     }
 
+    // Contextual wording keeps the current pace until the musician chooses a
+    // ratio in Properties. This is a functional, neutral starting point, not
+    // a guess that "with motion" means accelerando or that "not very slow"
+    // means Andante. In particular, confirm the unusual "Con mosso" spelling.
+    static const char* contextualTempi[] = {
+        QT_TRANSLATE_NOOP("palette", "Con moto"),
+        QT_TRANSLATE_NOOP("palette", "Con mosso"),
+        QT_TRANSLATE_NOOP("palette", "Nicht sehr langsam"),
+    };
+    for (const char* text : contextualTempi) {
+        auto item = makeElement<TempoText>(paletteScore());
+        item->setXmlText(text);
+        item->setFollowText(false);
+        item->setRelative(1.0);
+        sp->appendElement(item, text, 1.3);
+    }
+
+    // Unlike a comparative marking, Langsam begins a new pace. This is an
+    // editable example BPM, not a historical constant or a synonym for Lento.
+    auto langsam = makeElement<TempoText>(paletteScore());
+    langsam->setXmlText(QT_TRANSLATE_NOOP("palette", "Langsam"));
+    langsam->setFollowText(false);
+    langsam->setTempo(60.0 / 60.0);
+    sp->appendElement(langsam, QT_TRANSLATE_NOOP("palette", "Langsam"), 1.3);
+
     // The modifier belongs to the gradual change, not an immediate tempo
-    // text. Both examples retain their own engraved wording and editable
-    // factors; a musician must adjust the factor and span to the passage.
-    struct QualifiedRitardando {
+    // text. Each compound retains its engraved wording and editable factor;
+    // a musician must adjust the factor and span to the passage.
+    struct QualifiedGradualTempo {
         const char* text;
+        GradualTempoChangeType type;
         double initialFactor;
     };
-    static const QualifiedRitardando qualifiedRitardandi[] = {
-        { QT_TRANSLATE_NOOP("palette", "Poco rit."), 0.90 },
-        { QT_TRANSLATE_NOOP("palette", "Molto rit."), 0.60 },
+    static const QualifiedGradualTempo qualifiedGradualTempi[] = {
+        { QT_TRANSLATE_NOOP("palette", "Poco rit."), GradualTempoChangeType::Ritardando, 0.90 },
+        { QT_TRANSLATE_NOOP("palette", "Molto rit."), GradualTempoChangeType::Ritardando, 0.60 },
+        { QT_TRANSLATE_NOOP("palette", "Poco accel."), GradualTempoChangeType::Accelerando, 1.10 },
+        { QT_TRANSLATE_NOOP("palette", "Molto accel."), GradualTempoChangeType::Accelerando, 1.40 },
     };
-    for (const QualifiedRitardando& pattern : qualifiedRitardandi) {
+    for (const QualifiedGradualTempo& pattern : qualifiedGradualTempi) {
         auto item = makeElement<GradualTempoChange>(paletteScore());
-        item->setTempoChangeType(GradualTempoChangeType::Ritardando);
+        item->setTempoChangeType(pattern.type);
         item->setProperty(Pid::TEMPO_CHANGE_FACTOR, pattern.initialFactor);
         item->setPropertyFlags(Pid::TEMPO_CHANGE_FACTOR, PropertyFlags::NOSTYLE);
         const String text = String::fromUtf8(pattern.text);
@@ -1590,6 +1660,20 @@ PalettePtr PaletteCreator::newTextPalette(bool defaultPalette)
     expressionText->setXmlText(QT_TRANSLATE_NOOP("palette", "expression"));
     expressionText->setPlacement(PlacementV::BELOW);
     sp->appendElement(expressionText, QT_TRANSLATE_NOOP("palette", "Expression text"))->setElementTranslated(true);
+
+    // These are degree modifiers without a governing verb or tempo. Keep
+    // their spelling, but do not turn them into arbitrary speed multipliers.
+    static const char* incompleteModifiers[] = {
+        QT_TRANSLATE_NOOP("palette", "Con molto"),
+        QT_TRANSLATE_NOOP("palette", "Di molto"),
+    };
+    for (const char* text : incompleteModifiers) {
+        auto modifier = makeElement<Expression>(paletteScore());
+        modifier->setTextStyleType(TextStyleType::EXPRESSION);
+        modifier->setXmlText(text);
+        modifier->setPlacement(PlacementV::BELOW);
+        sp->appendElement(modifier, text, 1.3);
+    }
 
     auto is = makeElement<InstrumentChange>(paletteScore());
     is->setXmlText(QT_TRANSLATE_NOOP("palette", "Change instr."));

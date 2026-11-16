@@ -22,9 +22,11 @@
 #include "temposettingsmodel.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "engraving/dom/tempotext.h"
 #include "engraving/dom/score.h"
+#include "engraving/dom/tempotimeline.h"
 
 #include "dataformatter.h"
 
@@ -118,6 +120,36 @@ QString TempoSettingsModel::effectiveBpm() const
     }
     const mu::engraving::TempoText* marking = mu::engraving::toTempoText(m_elementList.front());
     return QString::number(marking->score()->multipliedTempo(marking->tick()).toBPM().val, 'f', 1);
+}
+
+QString TempoSettingsModel::upcomingTempo() const
+{
+    if (m_elementList.size() != 1 || !m_elementList.front()->score()) {
+        return QStringLiteral("—");
+    }
+    const mu::engraving::TempoText* marking = mu::engraving::toTempoText(m_elementList.front());
+    // The marking's tick is a raw score tick. Keep the timeline in the same
+    // coordinate system even when the playback repeat list is expanded.
+    const mu::engraving::TempoTimeline& timeline = marking->score()->tempoTimeline(/*expandRepeats*/ false);
+    const int tick = marking->tick().ticks();
+    const double currentBpm = timeline.tempo(tick).toBPM().val * timeline.tempoMultiplier().val;
+    for (const mu::engraving::TempoTimePoint& point : timeline.points()) {
+        if (point.utick <= tick) {
+            continue;
+        }
+        const double bpm = point.bps * timeline.tempoMultiplier().val * 60.0;
+        if (point.pause > 0.0) {
+            return muse::qtrc("propertiespanel", "Pause at tick %1: %2 s (before playback multiplier)")
+                   .arg(point.utick).arg(point.pause, 0, 'f', 2);
+        }
+        if (std::abs(bpm - currentBpm) >= 0.05) {
+            // These are sampled playback points; an eased ramp can yield
+            // several successive values before its final target.
+            return muse::qtrc("propertiespanel", "Next tempo sample at tick %1: %2 BPM")
+                   .arg(point.utick).arg(bpm, 0, 'f', 1);
+        }
+    }
+    return muse::qtrc("propertiespanel", "No later tempo or pause in the playback timeline.");
 }
 
 PropertyItem* TempoSettingsModel::isFollowText() const

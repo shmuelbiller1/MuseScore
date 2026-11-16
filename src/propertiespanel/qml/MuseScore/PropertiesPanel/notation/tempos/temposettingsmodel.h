@@ -37,6 +37,7 @@ class TempoSettingsModel : public PropertiesPanelAbstractModel
     Q_PROPERTY(mu::propertiespanel::PropertyItem * relativeFactor READ relativeFactor CONSTANT)
     Q_PROPERTY(bool relativeTempo READ relativeTempo NOTIFY relativeTempoChanged)
     Q_PROPERTY(QString effectiveBpm READ effectiveBpm NOTIFY effectiveBpmChanged)
+    Q_PROPERTY(QString upcomingTempo READ upcomingTempo NOTIFY effectiveBpmChanged)
 
 public:
     explicit TempoSettingsModel(QObject* parent, const muse::modularity::ContextPtr& iocCtx, IElementRepositoryService* repository,
@@ -51,6 +52,7 @@ public:
     PropertyItem* relativeFactor() const { return m_relativeFactor; }
     bool relativeTempo() const { return m_relativeTempo; }
     QString effectiveBpm() const;
+    QString upcomingTempo() const;
 
 signals:
     void relativeTempoChanged();

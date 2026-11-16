@@ -21,9 +21,12 @@
  */
 #include "dynamicsettingsmodel.h"
 
+#include <algorithm>
+
 #include "translation.h"
 
 #include "types/texttypes.h"
+#include "engraving/dom/dynamic.h"
 
 using namespace mu::propertiespanel;
 using namespace mu::engraving;
@@ -43,6 +46,10 @@ void DynamicsSettingsModel::createProperties()
     ModelWithVoiceAndPositionOptions::createProperties();
 
     m_avoidBarLines = buildPropertyItem(Pid::AVOID_BARLINES);
+    m_customVelocity = buildPropertyItem(Pid::VELOCITY, [this](const Pid pid, const QVariant& newValue) {
+        onPropertyValueChanged(pid, newValue);
+        emit playbackDetailChanged();
+    });
     m_dynamicScale = buildPropertyItem(Pid::MUSICAL_SYMBOLS_SCALE,
                                        [this](const Pid pid, const QVariant& newValue) {
         onPropertyValueChanged(pid, newValue.toDouble() / 100);
@@ -67,6 +74,37 @@ void DynamicsSettingsModel::createProperties()
 void DynamicsSettingsModel::requestElements()
 {
     m_elementList = m_repository->findElementsByType(ElementType::DYNAMIC);
+    emit playbackDetailChanged();
+}
+
+bool DynamicsSettingsModel::customDynamic() const
+{
+    return m_elementList.size() == 1 && toDynamic(m_elementList.front())->dynamicType() == DynamicType::OTHER;
+}
+
+QString DynamicsSettingsModel::playbackDetail() const
+{
+    if (m_elementList.size() != 1) {
+        return muse::qtrc("propertiespanel", "Select one dynamic to inspect playback.");
+    }
+    const Dynamic* dynamic = toDynamic(m_elementList.front());
+    if (!dynamic->playDynamic()) {
+        return muse::qtrc("propertiespanel", "Playback disabled for this dynamic; printed text is visual only.");
+    }
+    if (customDynamic()) {
+        if (dynamic->velocity() < 1) {
+            return muse::qtrc("propertiespanel",
+                              "Unrecognized dynamic wording is visual only until a velocity is set. Set 0 to clear the override.");
+        }
+        const double level = std::clamp(0.525 + (dynamic->velocity() - 80) * (0.05 / 16.0), 0.0, 1.0);
+        return muse::qtrc("propertiespanel",
+                          "Authored velocity %1 / 127; dynamic curve target %2%. Actual sound depends on the instrument.")
+               .arg(dynamic->velocity()).arg(QString::number(level * 100.0, 'f', 1));
+    }
+    // The nominal MIDI velocity is not an audio loudness measurement: the
+    // instrument profile and subsequent hairpins affect what is heard.
+    return muse::qtrc("propertiespanel", "Playback on; nominal MIDI velocity: %1 / 127. Instrument sound and hairpins may differ.")
+           .arg(dynamic->velocity());
 }
 
 void DynamicsSettingsModel::loadProperties()
@@ -74,6 +112,9 @@ void DynamicsSettingsModel::loadProperties()
     ModelWithVoiceAndPositionOptions::loadProperties();
 
     loadPropertyItem(m_avoidBarLines);
+    loadPropertyItem(m_customVelocity, [](const QVariant& value) -> QVariant {
+        return value.toInt() < 0 ? 0 : value.toInt();
+    });
     loadPropertyItem(m_dynamicScale, [](const QVariant& elementPropertyValue) -> QVariant {
         return muse::DataFormatter::roundDouble(elementPropertyValue.toDouble()) * 100;
     });
@@ -87,6 +128,7 @@ void DynamicsSettingsModel::loadProperties()
     loadPropertyItem(m_frameCornerRadius, formatDoubleFunc);
 
     updateFramePropertiesAvailability();
+    emit playbackDetailChanged();
 }
 
 PropertyItem* DynamicsSettingsModel::avoidBarLines() const
@@ -97,6 +139,11 @@ PropertyItem* DynamicsSettingsModel::avoidBarLines() const
 PropertyItem* DynamicsSettingsModel::dynamicScale() const
 {
     return m_dynamicScale;
+}
+
+PropertyItem* DynamicsSettingsModel::customVelocity() const
+{
+    return m_customVelocity;
 }
 
 PropertyItem* DynamicsSettingsModel::centerOnNotehead() const

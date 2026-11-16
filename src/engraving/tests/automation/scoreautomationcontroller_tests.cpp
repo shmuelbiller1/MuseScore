@@ -29,9 +29,13 @@
 #include "engraving/automation/internal/scoreautomationcontroller.h"
 #include "engraving/automation/tempovalues.h"
 #include "engraving/dom/chord.h"
+#include "engraving/dom/dynamic.h"
+#include "engraving/dom/factory.h"
+#include "engraving/dom/measure.h"
 #include "engraving/dom/note.h"
 #include "engraving/dom/masterscore.h"
 #include "engraving/dom/gradualtempochange.h"
+#include "engraving/dom/hairpin.h"
 #include "engraving/dom/repeatlist.h"
 #include "engraving/dom/segment.h"
 #include "engraving/dom/staff.h"
@@ -104,6 +108,92 @@ protected:
 
 MasterScore* ScoreAutomationController_Tests::s_dynamicsScore = nullptr;
 MasterScore* ScoreAutomationController_Tests::s_tempoScore = nullptr;
+
+TEST_F(ScoreAutomationController_Tests, CustomDynamicRequiresAuthoredVelocity)
+{
+    // An ambiguous expression is printed, but must not acquire a playback
+    // level until its editor explicitly chooses one. Use a fresh score so
+    // the shared test fixture and its EIDs are not changed.
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(AUTOMATION_DATA_DIR + u"dynamics.mscx"));
+    ASSERT_TRUE(score);
+    Segment* segment = score->firstMeasure()->findSegmentR(SegmentType::ChordRest, Fraction(2, 4));
+    ASSERT_TRUE(segment);
+    Dynamic* expression = Factory::createDynamic(segment, false);
+    expression->setTrack(0);
+    expression->setDynamicType(u"Con forza");
+    ASSERT_EQ(expression->dynamicType(), DynamicType::OTHER);
+    segment->add(expression);
+
+    const AutomationCurveKey key = AutomationCurveKey::staff(AutomationType::Dynamics, score->staff(0)->id());
+    ScoreAutomationController controller;
+    controller.init(score.get());
+    EXPECT_FALSE(controller.automationData()->curve(key).contains(960));
+
+    expression->setVelocity(96);
+    controller.init(score.get());
+    const AutomationCurve& curve = controller.automationData()->curve(key);
+    ASSERT_TRUE(curve.contains(960));
+    EXPECT_NEAR(curve.at(960).value.outValue.raw(), F_VALUE, 0.000001);
+    EXPECT_TRUE(curve.contains(1440)); // following mp still takes effect
+
+    expression->setPlayDynamic(false);
+    controller.init(score.get());
+    EXPECT_FALSE(controller.automationData()->curve(key).contains(960));
+}
+
+TEST_F(ScoreAutomationController_Tests, CustomDynamicCanBeHairpinTarget)
+{
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(AUTOMATION_DATA_DIR + u"dynamics.mscx"));
+    ASSERT_TRUE(score);
+    Segment* segment = score->tick2segment(Fraction::fromTicks(5760), false, SegmentType::ChordRest);
+    ASSERT_TRUE(segment);
+    Dynamic* ending = toDynamic(segment->findAnnotation(ElementType::DYNAMIC, 0, 0));
+    ASSERT_TRUE(ending);
+    ending->setDynamicType(u"Con forza");
+    ending->setVelocity(112); // same level as the original ff target
+
+    ScoreAutomationController controller;
+    controller.init(score.get());
+    const AutomationCurveKey key = AutomationCurveKey::staff(AutomationType::Dynamics, score->staff(0)->id());
+    const AutomationCurve& curve = controller.automationData()->curve(key);
+    const auto end = curve.find(5760);
+    ASSERT_NE(end, curve.end());
+    EXPECT_NEAR(resolveInValue(curve, end).raw(), FF_VALUE, 0.000001);
+    EXPECT_NEAR(end->second.value.outValue.raw(), FF_VALUE, 0.000001);
+}
+
+TEST_F(ScoreAutomationController_Tests, QualifiedHairpinUsesAuthoredStrength)
+{
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(AUTOMATION_DATA_DIR + u"dynamics.mscx"));
+    ASSERT_TRUE(score);
+    Segment* endSegment = score->tick2segment(Fraction::fromTicks(5760), false, SegmentType::ChordRest);
+    ASSERT_TRUE(endSegment);
+    Dynamic* ending = toDynamic(endSegment->findAnnotation(ElementType::DYNAMIC, 0, 0));
+    ASSERT_TRUE(ending);
+    ending->setPlayDynamic(false);
+
+    Hairpin* hairpin = nullptr;
+    for (const auto& entry : score->spanner()) {
+        if (entry.second->isHairpin()) {
+            hairpin = toHairpin(entry.second);
+            break;
+        }
+    }
+    ASSERT_TRUE(hairpin);
+    hairpin->setBeginText(u"Molto cresc.");
+    hairpin->setVeloChange(32);
+
+    const AutomationCurveKey key = AutomationCurveKey::staff(AutomationType::Dynamics, score->staff(0)->id());
+    ScoreAutomationController controller;
+    controller.init(score.get());
+    const AutomationCurve& curve = controller.automationData()->curve(key);
+    EXPECT_NEAR(curve.at(4800).value.outValue.raw(), P_VALUE, 0.000001);
+    EXPECT_NEAR(curve.at(5760).value.outValue.raw(), MF_VALUE, 0.000001);
+
+    hairpin->setVeloChange(8); // the same wording can be interpreted differently
+    controller.init(score.get());
+    EXPECT_NEAR(controller.automationData()->curve(key).at(5760).value.outValue.raw(), P_VALUE + 0.025, 0.000001);
+}
 
 TEST_F(ScoreAutomationController_Tests, Init_Dynamics_CurveMatchesExpected)
 {
@@ -789,6 +879,55 @@ TEST_F(ScoreAutomationController_Tests, RelativeTempo_OverlappingRampAndNativeRo
     EXPECT_DOUBLE_EQ(marking->getProperty(Pid::TEMPO_CHANGE_FACTOR).toReal(), 0.0);
     EXPECT_TRUE(marking->setProperty(Pid::TEMPO_CHANGE_FACTOR, 0.9));
     EXPECT_TRUE(marking->isRelative());
+}
+
+TEST_F(ScoreAutomationController_Tests, QualifiedAccelerandoChangesTempoOverSpan)
+{
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(AUTOMATION_DATA_DIR + u"tempo_relative.mscx"));
+    ASSERT_TRUE(score);
+    ASSERT_FALSE(score->spannerMap().map().empty());
+    GradualTempoChange* ramp = toGradualTempoChange(score->spannerMap().map().begin()->second);
+    ASSERT_TRUE(ramp);
+    ramp->setTempoChangeType(GradualTempoChangeType::Accelerando);
+    ramp->setProperty(Pid::TEMPO_CHANGE_FACTOR, 1.4);
+    ramp->setBeginText(u"Molto accel.");
+
+    ScoreAutomationController controller;
+    controller.init(score.get());
+    EXPECT_NEAR(controller.tempoTimeline().tempo(1920).toBPM().val, 162.0, 0.01);
+    EXPECT_NEAR(controller.tempoTimeline().tempo(3840).toBPM().val, 226.8, 0.01);
+    EXPECT_EQ(ramp->beginText(), u"Molto accel.");
+}
+
+TEST_F(ScoreAutomationController_Tests, QualifiedRelativeTempoKeepsTextAndFactorIndependent)
+{
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(AUTOMATION_DATA_DIR + u"tempo_relative.mscx"));
+    ASSERT_TRUE(score);
+    Segment* segment = score->tick2segment(Fraction::fromTicks(1920), false, SegmentType::ChordRest);
+    ASSERT_TRUE(segment);
+    TempoText* marking = nullptr;
+    for (EngravingItem* item : segment->annotations()) {
+        if (item->isTempoText()) {
+            marking = toTempoText(item);
+            break;
+        }
+    }
+    ASSERT_TRUE(marking);
+    marking->setXmlText(u"Molto più mosso");
+    marking->setRelative(1.2);
+    ScoreAutomationController controller;
+    controller.init(score.get());
+    EXPECT_NEAR(controller.tempoTimeline().tempo(1920).toBPM().val, 216.0, 0.01);
+    EXPECT_NEAR(controller.tempoTimeline().tempo(3840).toBPM().val, 108.0, 0.01);
+
+    marking->setRelative(1.1);
+    controller.init(score.get());
+    EXPECT_EQ(marking->xmlText(), u"Molto più mosso");
+    EXPECT_NEAR(controller.tempoTimeline().tempo(1920).toBPM().val, 198.0, 0.01);
+    std::unique_ptr<EngravingItem> reloaded(ScoreRW::writeReadElement(marking));
+    ASSERT_TRUE(reloaded);
+    EXPECT_EQ(toTempoText(reloaded.get())->xmlText(), u"Molto più mosso");
+    EXPECT_DOUBLE_EQ(toTempoText(reloaded.get())->relativeValue(), 1.1);
 }
 
 TEST_F(ScoreAutomationController_Tests, RelativeTempo_EighteenIndependentPartsShareTiming)

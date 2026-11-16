@@ -449,7 +449,9 @@ PropertyValue Dynamic::getProperty(Pid propertyId) const
     case Pid::DYNAMIC_TYPE:
         return m_dynamicType;
     case Pid::VELOCITY:
-        return velocity();
+        // A custom marking has no nominal level until the musician assigns
+        // one. Preserve 0 as the inspector's visual-only reset value.
+        return m_dynamicType == DynamicType::OTHER ? m_velocity : velocity();
     case Pid::VELO_CHANGE:
         if (isVelocityChangeAvailable()) {
             return changeInVelocity();

@@ -99,9 +99,17 @@ QStringList historicalAliases(const PaletteCell* cell)
         }
     } else if (cell->element->isDynamic()) {
         switch (toDynamic(cell->element.get())->dynamicType()) {
+        case DynamicType::PPP: return { QStringLiteral("pianississimo") };
+        case DynamicType::PP: return { QStringLiteral("pianissimo") };
         case DynamicType::P: return { QStringLiteral("piano") };
+        case DynamicType::MP: return { QStringLiteral("mezzo piano"), QStringLiteral("mezzopiano") };
+        case DynamicType::MF: return { QStringLiteral("mezzo forte"), QStringLiteral("mezzoforte") };
         case DynamicType::F: return { QStringLiteral("forte") };
-        case DynamicType::SFZ: return { QStringLiteral("sforzando") };
+        case DynamicType::FF: return { QStringLiteral("fortissimo") };
+        case DynamicType::FFF: return { QStringLiteral("fortississimo") };
+        case DynamicType::FP: return { QStringLiteral("fortepiano"), QStringLiteral("forte piano") };
+        case DynamicType::SFZ: return { QStringLiteral("sforzando"), QStringLiteral("sforzato") };
+        case DynamicType::SFP: return { QStringLiteral("sforzando piano") };
         case DynamicType::RFZ: return { QStringLiteral("rinforzando") };
         default: break;
         }
@@ -131,13 +139,19 @@ QStringList historicalAliases(const PaletteCell* cell)
     } else if (cell->element->isOrnament()) {
         switch (toOrnament(cell->element.get())->symId()) {
         case SymId::ornamentTrill: return { QStringLiteral("trillo"), QStringLiteral("triller") };
-        case SymId::ornamentTurn: return { QStringLiteral("gruppetto") };
+        case SymId::ornamentTurn: return { QStringLiteral("gruppetto"), QStringLiteral("turn") };
+        case SymId::ornamentTurnInverted: return { QStringLiteral("inverted turn"), QStringLiteral("reverse turn") };
+        case SymId::ornamentShortTrill: return { QStringLiteral("prall"), QStringLiteral("short trill") };
+        case SymId::ornamentMordent: return { QStringLiteral("mordent") };
         default: break; // historical mordent direction is ambiguous
         }
     } else if (cell->element->isArticulation()) {
         switch (toArticulation(cell->element.get())->symId()) {
         case SymId::articStaccatoAbove: return { QStringLiteral("detached"), QStringLiteral("staccato") };
+        case SymId::articStaccatissimoAbove: return { QStringLiteral("very detached"), QStringLiteral("staccatissimo") };
         case SymId::articTenutoAbove: return { QStringLiteral("held note"), QStringLiteral("tenuto") };
+        case SymId::articTenutoStaccatoAbove: return { QStringLiteral("portato"), QStringLiteral("mezzo staccato") };
+        case SymId::articAccentAbove: return { QStringLiteral("accent"), QStringLiteral("accentato") };
         case SymId::articMarcatoAbove: return { QStringLiteral("marked"), QStringLiteral("marcato") };
         default: break;
         }

@@ -25,6 +25,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -287,6 +288,78 @@ TEST_F(MidiExportTests, HistoricalTempo_18Parts_RelativeRampAndPlaybackMultiplie
             EXPECT_TRUE(hasRepeatedMenoNote) << "Missing repeat onset on staff " << staff;
         }
     }
+}
+
+TEST_F(MidiExportTests, HistoricalExpression_18IndependentParts)
+{
+    // One real score, one common clock, 18 distinct 4/4 rhythm patterns, and
+    // staff-local dynamics and articulations. The export is parsed back into
+    // events: counting staves alone would not catch muted/merged parts.
+    const String path = ScoreRW::rootPath() + u"/../../../engraving/tests/automation/data/tempo_relative_18_expressive.mscx";
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(path, true));
+    ASSERT_TRUE(score);
+    ASSERT_EQ(score->nstaves(), 18u);
+    ASSERT_TRUE(ScoreRW::saveScore(score.get(), u"tempo-relative-18-expressive-round-trip.mscx"));
+    score.reset(ScoreRW::readScore(u"tempo-relative-18-expressive-round-trip.mscx", true));
+    ASSERT_TRUE(score);
+    ASSERT_EQ(score->nstaves(), 18u);
+    score->rebuildMidiMapping();
+
+    QBuffer bytes;
+    ASSERT_TRUE(bytes.open(QIODevice::ReadWrite));
+    ExportMidi exporter(score.get());
+    ASSERT_TRUE(exporter.write(&bytes, /*expandRepeats*/ true, /*exportRPNs*/ true));
+    ASSERT_TRUE(bytes.seek(0));
+    MidiFile midi;
+    ASSERT_TRUE(midi.read(&bytes));
+    ASSERT_EQ(midi.tracks().size(), 18u);
+
+    // Durations in eighth notes; each row sums to one four-beat measure.
+    const std::vector<std::vector<int> > patterns {
+        { 8 }, { 4, 4 }, { 2, 2, 2, 2 }, { 1, 1, 2, 4 }, { 4, 2, 2 },
+        { 2, 4, 2 }, { 2, 2, 4 }, { 4, 1, 1, 2 }, { 2, 1, 1, 4 },
+        { 1, 2, 1, 4 }, { 1, 1, 1, 1, 4 }, { 4, 1, 2, 1 },
+        { 1, 4, 1, 2 }, { 1, 2, 4, 1 }, { 1, 1, 4, 2 },
+        { 2, 4, 1, 1 }, { 1, 4, 2, 1 }, { 1, 1, 2, 1, 1, 2 },
+    };
+    int pianoVelocity = 0;
+    int forteVelocity = 0;
+    for (size_t staff = 0; staff < patterns.size(); ++staff) {
+        std::vector<int> expected;
+        int position = 0;
+        for (int duration : patterns[staff]) {
+            expected.push_back(position);
+            position += duration * 240;
+        }
+        ASSERT_EQ(position, 1920);
+
+        std::vector<int> actual;
+        for (const auto& [tick, event] : midi.tracks()[staff].events()) {
+            if (tick >= 1920 || event.type() != ME_NOTEON || event.velo() == 0) {
+                continue;
+            }
+            if (event.pitch() == 48 + staff) {
+                actual.push_back(tick);
+                if (tick == 0 && staff == 0) {
+                    pianoVelocity = event.velo();
+                } else if (tick == 0 && staff == 2) {
+                    forteVelocity = event.velo();
+                }
+            }
+        }
+        EXPECT_EQ(actual, expected) << "Independent onsets on staff " << staff;
+    }
+    EXPECT_GT(pianoVelocity, 0);
+    EXPECT_GT(forteVelocity, pianoVelocity) << "The f and p dynamics must not sound equally loud";
+
+    bool staccatoReleasedEarly = false;
+    for (const auto& [tick, event] : midi.tracks()[1].events()) {
+        if (tick > 0 && tick < 960 && event.pitch() == 49
+            && (event.type() == ME_NOTEOFF || (event.type() == ME_NOTEON && event.velo() == 0))) {
+            staccatoReleasedEarly = true;
+        }
+    }
+    EXPECT_TRUE(staccatoReleasedEarly) << "The staccato half note must release before its written end";
 }
 
 TEST_F(MidiExportTests, midi184376ExportMidiInitialKeySi) {

@@ -37,6 +37,7 @@ class HairpinLineSettingsModel : public TextLineSettingsModel
 
     Q_PROPERTY(mu::propertiespanel::PropertyItem * snapBefore READ snapBefore CONSTANT)
     Q_PROPERTY(mu::propertiespanel::PropertyItem * snapAfter READ snapAfter CONSTANT)
+    Q_PROPERTY(mu::propertiespanel::PropertyItem * velocityChange READ velocityChange CONSTANT)
 
 public:
     enum HairpinLineType {
@@ -50,6 +51,7 @@ public:
 
     PropertyItem* snapBefore() const;
     PropertyItem* snapAfter() const;
+    PropertyItem* velocityChange() const;
 
 protected:
     void createProperties() override;
@@ -61,5 +63,6 @@ private:
 
     PropertyItem* m_snapBefore = nullptr;
     PropertyItem* m_snapAfter = nullptr;
+    PropertyItem* m_velocityChange = nullptr;
 };
 }
