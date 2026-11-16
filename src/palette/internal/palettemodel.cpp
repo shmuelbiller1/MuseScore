@@ -169,19 +169,25 @@ QString markingPlaybackHelp(const PaletteCell* cell)
         QString meaning;
         switch (toGradualTempoChange(cell->element.get())->tempoChangeType()) {
         case GradualTempoChangeType::Accelerando:
-            meaning = muse::qtrc("palette", "Gradually faster. "); break;
+            meaning = muse::qtrc("palette", "Gradually faster. ");
+            break;
         case GradualTempoChangeType::Ritardando:
-            meaning = muse::qtrc("palette", "Gradually slower. "); break;
+            meaning = muse::qtrc("palette", "Gradually slower. ");
+            break;
         case GradualTempoChangeType::Rallentando:
-            meaning = muse::qtrc("palette", "Gradually slowing and broadening. "); break;
+            meaning = muse::qtrc("palette", "Gradually slowing and broadening. ");
+            break;
         case GradualTempoChangeType::Allargando:
-            meaning = muse::qtrc("palette", "Broadening and slowing. "); break;
+            meaning = muse::qtrc("palette", "Broadening and slowing. ");
+            break;
         case GradualTempoChangeType::Stringendo:
-            meaning = muse::qtrc("palette", "Pressing forward, typically faster. "); break;
+            meaning = muse::qtrc("palette", "Pressing forward, typically faster. ");
+            break;
         default:
             break;
         }
-        return meaning + muse::qtrc("palette", "Playback: partial — tempo curve only. Adjust the change factor and span for this passage; other expression is not inferred.");
+        return meaning + muse::qtrc("palette",
+                                    "Playback: partial — tempo curve only. Adjust the change factor and span for this passage; other expression is not inferred.");
     }
     if (cell->element->isTempoText()) {
         const TempoText* tempo = toTempoText(cell->element.get());
@@ -192,9 +198,11 @@ QString markingPlaybackHelp(const PaletteCell* cell)
             return muse::qtrc("palette", "Playback: tempo restoration when follow-text is enabled. Check the resulting BPM in context.");
         }
         if (tempo->isRelative()) {
-            return muse::qtrc("palette", "Playback: functional immediate relative tempo. The initial percentage is adjustable in Properties; it is not a universal interpretation.");
+            return muse::qtrc("palette",
+                              "Playback: functional immediate relative tempo. The initial percentage is adjustable in Properties; it is not a universal interpretation.");
         }
-        return muse::qtrc("palette", "Playback: functional absolute tempo change. Named tempo presets have editable BPM, not a universal historical value.");
+        return muse::qtrc("palette",
+                          "Playback: functional absolute tempo change. Named tempo presets have editable BPM, not a universal historical value.");
     }
     if (cell->element->isDynamic()) {
         return toDynamic(cell->element.get())->playDynamic()
@@ -202,10 +210,12 @@ QString markingPlaybackHelp(const PaletteCell* cell)
                : muse::qtrc("palette", "Playback: visual only (dynamic playback disabled).");
     }
     if (cell->element->isHairpin()) {
-        return muse::qtrc("palette", "Playback: partial — gradual dynamics automation; set span and target level. Sound profile affects the result.");
+        return muse::qtrc("palette",
+                          "Playback: partial — gradual dynamics automation; set span and target level. Sound profile affects the result.");
     }
     if (cell->element->isFermata()) {
-        return muse::qtrc("palette", "Playback: partial — shared duration stretch; adjust the hold for this passage and inspect overlapping parts.");
+        return muse::qtrc("palette",
+                          "Playback: partial — shared duration stretch; adjust the hold for this passage and inspect overlapping parts.");
     }
     if (cell->element->isBreath()) {
         return toBreath(cell->element.get())->pause() > 0.0
@@ -213,7 +223,8 @@ QString markingPlaybackHelp(const PaletteCell* cell)
                : muse::qtrc("palette", "Playback: visual breath symbol by default; set a pause duration to affect timing.");
     }
     if (cell->element->isOrnament() || cell->element->isArticulation()) {
-        return muse::qtrc("palette", "Playback: partial; rendering depends on the ornament/articulation type and instrument profile. Audition this part.");
+        return muse::qtrc("palette",
+                          "Playback: partial; rendering depends on the ornament/articulation type and instrument profile. Audition this part.");
     }
     return {};
 }

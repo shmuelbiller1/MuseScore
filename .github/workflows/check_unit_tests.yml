@@ -113,6 +113,41 @@ jobs:
       env:
         ASAN_OPTIONS: "detect_leaks=0"
 
+    # Keep failed assertion details visible in check annotations even when the
+    # hosted runner's compressed log download is unavailable to a fork.
+    - name: Report failing tests
+      if: failure()
+      run: |
+        python3 - <<'PY'
+        from pathlib import Path
+        from xml.etree import ElementTree as ET
+        import os
+
+        report = Path(os.environ['GITHUB_STEP_SUMMARY'])
+        with report.open('a') as out:
+            out.write('## Failed unit tests\n\n')
+            last = Path('build.debug/Testing/Temporary/LastTestsFailed.log')
+            if last.exists():
+                out.write('```\n' + last.read_text(errors='replace')[:10000] + '\n```\n')
+            failures = 0
+            for path in Path('build.debug').rglob('*.xml'):
+                try:
+                    root = ET.parse(path).getroot()
+                except ET.ParseError:
+                    continue
+                for case in root.iter('testcase'):
+                    for failure in case.findall('failure'):
+                        if failures >= 30:
+                            break
+                        label = case.get('classname', '') + '.' + case.get('name', '')
+                        message = (failure.get('message') or failure.text or '').strip()[:1500]
+                        out.write(f'### {label}\n\n```\n{message}\n```\n')
+                        print(f'::error title=Unit test failure::{label}: {message[:250].replace(chr(10), " ")}')
+                        failures += 1
+            if not failures:
+                out.write('No GoogleTest XML failure found; inspect the build/test step.\n')
+        PY
+
     - name: Code coverage
       if: github.event_name == 'schedule' || inputs.code_coverage
       run: |

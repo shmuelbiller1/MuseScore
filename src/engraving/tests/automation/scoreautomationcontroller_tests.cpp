@@ -823,6 +823,25 @@ TEST_F(ScoreAutomationController_Tests, RelativeTempo_EighteenIndependentPartsSh
     EXPECT_NEAR(timeline.tempo(5760).toBPM().val, 162.0, 0.01);
     EXPECT_NEAR(timeline.tempo(7680).toBPM().val, 180.0, 0.01);
     EXPECT_NEAR(timeline.tempo(13440).toBPM().val, 162.0, 0.01);
+
+    ASSERT_TRUE(ScoreRW::saveScore(score.get(), u"tempo-relative-18-parts-round-trip.mscx"));
+    std::unique_ptr<MasterScore> reopened(ScoreRW::readScore(u"tempo-relative-18-parts-round-trip.mscx", true));
+    ASSERT_TRUE(reopened);
+    ASSERT_EQ(reopened->parts().size(), 18u);
+    ASSERT_EQ(reopened->nstaves(), 18u);
+    ScoreAutomationController reopenedController;
+    reopenedController.init(reopened.get());
+    EXPECT_NEAR(reopenedController.tempoTimeline().tempo(2880).toBPM().val, 141.75, 0.01);
+    EXPECT_NEAR(reopenedController.tempoTimeline().tempo(13440).toBPM().val, 162.0, 0.01);
+    Segment* opening = reopened->tick2segment(Fraction::fromTicks(0), false, SegmentType::ChordRest);
+    ASSERT_TRUE(opening);
+    for (int staff = 0; staff < 18; ++staff) {
+        EngravingItem* item = opening->element(track_idx_t(staff * VOICES));
+        ASSERT_TRUE(item);
+        ASSERT_TRUE(item->isChord());
+        ASSERT_EQ(toChord(item)->notes().size(), 1u);
+        EXPECT_EQ(toChord(item)->notes().front()->pitch(), 48 + staff);
+    }
 }
 
 TEST_F(ScoreAutomationController_Tests, EditPoints_Tempo_UserPointCascadesToLaterMarkings)

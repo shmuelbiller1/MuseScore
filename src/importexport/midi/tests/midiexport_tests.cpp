@@ -36,6 +36,7 @@
 #include "global/io/path.h"
 
 #include "engraving/compat/midi/event.h"
+#include "engraving/compat/midi/pausemap.h"
 #include "engraving/compat/midi/compatmidirender.h"
 #include "engraving/compat/midi/compatmidirenderinternal.h"
 #include "engraving/dom/masterscore.h"
@@ -252,6 +253,8 @@ TEST_F(MidiExportTests, HistoricalTempo_18Parts_RelativeRampAndPlaybackMultiplie
             const uchar* data = event.edata();
             tempoMicros[tick] = (int(data[0]) << 16) | (int(data[1]) << 8) | int(data[2]);
         }
+        // These score ticks are before the first fermata (at 9600). Any
+        // actual PauseMap insertion at or after it must not shift these.
         for (const auto [tick, bpm] : { std::pair { 0, 180.0 }, std::pair { 1920, 162.0 },
                                         std::pair { 2880, 141.75 }, std::pair { 3840, 81.0 },
                                         std::pair { 5760, 162.0 }, std::pair { 7680, 180.0 } }) {
@@ -260,17 +263,28 @@ TEST_F(MidiExportTests, HistoricalTempo_18Parts_RelativeRampAndPlaybackMultiplie
             EXPECT_NEAR(60000000.0 / it->second, bpm * multiplier, 0.02);
         }
 
+        // Use the same score-based pause mapping as the export path: later
+        // repeated events are not necessarily at their raw score ticks.
+        PauseMap pauseMap;
+        pauseMap.calculate(score.get());
+        const int secondPassMeno = pauseMap.tickWithPauses(13440);
+        const auto repeatedTempo = tempoMicros.find(secondPassMeno);
+        ASSERT_NE(repeatedTempo, tempoMicros.end());
+        EXPECT_NEAR(60000000.0 / repeatedTempo->second, 162.0 * multiplier, 0.02);
+
         // Independently pitched parts must retain an onset in every track.
         for (size_t staff = 0; staff < 18; ++staff) {
             bool hasOpeningNote = false;
+            bool hasRepeatedMenoNote = false;
             for (const auto& [tick, event] : midi.tracks()[staff].events()) {
-                if (tick == 0 && event.type() == ME_NOTEON && event.velo() > 0
-                    && event.pitch() == 48 + staff) {
-                    hasOpeningNote = true;
-                    break;
+                if (event.type() != ME_NOTEON || event.velo() == 0) {
+                    continue;
                 }
+                hasOpeningNote |= tick == 0 && event.pitch() == 48 + staff;
+                hasRepeatedMenoNote |= tick == secondPassMeno && event.pitch() == 49 + staff;
             }
             EXPECT_TRUE(hasOpeningNote) << "Missing opening note on staff " << staff;
+            EXPECT_TRUE(hasRepeatedMenoNote) << "Missing repeat onset on staff " << staff;
         }
     }
 }

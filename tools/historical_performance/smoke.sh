@@ -14,6 +14,8 @@ python3 docs/historical-performance/test-scores/expand_to_18.py \
     docs/historical-performance/test-scores/two-voices.musicxml "$tmp_dir/18-parts.musicxml"
 python3 docs/historical-performance/test-scores/expand_native_to_18.py \
     src/engraving/tests/automation/data/tempo_relative.mscx "$tmp_dir/18-parts.mscx"
+# The checked-in native regression must be exactly the generator output.
+cmp "$tmp_dir/18-parts.mscx" src/engraving/tests/automation/data/tempo_relative_18_parts.mscx
 python3 - "$tmp_dir/18-parts.musicxml" "$tmp_dir/18-parts.mscx" <<'PY'
 from pathlib import Path
 import sys
