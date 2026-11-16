@@ -34,6 +34,8 @@ class DynamicsSettingsModel : public ModelWithVoiceAndPositionOptions
 
     Q_PROPERTY(PropertyItem * avoidBarLines READ avoidBarLines CONSTANT)
     Q_PROPERTY(PropertyItem * dynamicScale READ dynamicScale CONSTANT)
+    Q_PROPERTY(PropertyItem * customVelocity READ customVelocity CONSTANT)
+    Q_PROPERTY(bool customDynamic READ customDynamic NOTIFY playbackDetailChanged)
     Q_PROPERTY(PropertyItem * centerOnNotehead READ centerOnNotehead CONSTANT)
     Q_PROPERTY(QString playbackDetail READ playbackDetail NOTIFY playbackDetailChanged)
 
@@ -54,6 +56,8 @@ public:
 
     PropertyItem* avoidBarLines() const;
     PropertyItem* dynamicScale() const;
+    PropertyItem* customVelocity() const;
+    bool customDynamic() const;
     PropertyItem* centerOnNotehead() const;
     QString playbackDetail() const;
 
@@ -73,6 +77,7 @@ private:
 private:
     PropertyItem* m_avoidBarLines = nullptr;
     PropertyItem* m_dynamicScale = nullptr;
+    PropertyItem* m_customVelocity = nullptr;
     PropertyItem* m_centerOnNotehead = nullptr;
 
     PropertyItem* m_frameType = nullptr;

@@ -1812,6 +1812,9 @@ void fillScoreVelocities(const Score* score, CompatMidiRendererInternal::Context
             }
 
             const Dynamic* d = toDynamic(e);
+            if (!d->playDynamic()) {
+                continue;
+            }
             int v = d->velocity();
 
             // treat an invalid dynamic as no change, i.e. a dynamic set to 0

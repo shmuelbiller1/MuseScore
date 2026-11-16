@@ -19,11 +19,11 @@ A working musician-facing search/interpretation backlog for European concert and
 | Tempo comodo (It.) | Comfortable pace | V |
 | Tempo di marcia, alla marcia (It.) | March character; rhythm and accent as well as pace | V; do not infer BPM |
 | Tempo di valzer, alla breve (It.) | Waltz character / cut-time feel; meter-dependent | Meter T, expression V |
-| Langsam, sehr langsam (De.) | Slow / very slow; not Lento at a fixed BPM | V; choose explicit TempoText BPM |
+| Langsam, sehr langsam (De.) | Slow / very slow; not Lento at a fixed BPM | N Langsam editable 60 BPM example; sehr langsam V |
 | Mäßig / Maessig, gemächlich / gemaechlich (De.) | Moderate / leisurely | V; choose BPM |
 | Bewegt, lebhaft, schnell, sehr schnell (De.) | In motion / lively / fast / very fast | V; choose BPM |
-| Nicht zu schnell, nicht sehr langsam (De.) | Not too fast / not very slow; negative qualifiers | V; ask musician |
-| Con moto, con movimento (It.) | With motion, a character/pace qualifier | V; do not auto-speed up |
+| Nicht zu schnell, nicht sehr langsam (De.) | Not too fast / not very slow; negative qualifiers | Nicht sehr langsam N neutral 100% ratio until configured; nicht zu schnell V |
+| Con moto, con movimento (It.) | With motion, a character/pace qualifier | Con moto N neutral 100% ratio until configured; con movimento V; do not auto-speed up |
 | Meno mosso, meno moto (It.) | Less motion, an **immediate** new pace | N 90% starting point for meno mosso only |
 | Più mosso / piu mosso (It.) | More motion, an **immediate** new pace | N 110% starting point |
 | Langsamer, schneller (De.) | Slower / faster **now** | N 90%/110% starting points |
@@ -58,12 +58,12 @@ A working musician-facing search/interpretation backlog for European concert and
 | Wording / variants | Meaning and classification | Current interpretation |
 | --- | --- | --- |
 | Poco, un poco, pochissimo (It.) | Little / a little / very little; modifies another instruction | V alone; `Poco rit.` N editable 90% arrival |
-| Molto, di molto, assai (It.) | Much / by much / very; different grammatical scope | V alone; `Molto rit.` N editable 60% arrival |
+| Molto, di molto, assai (It.) | Much / by much / very; different grammatical scope | `Di molto` and `Con molto` expression cells V alone; `Molto rit.` N editable 60% arrival |
 | Non troppo, ma non troppo (It.) | Not too much; caps another instruction | V; never multiply BPM blindly |
 | Sempre (It.) | Continue same instruction until changed | V; needs scope |
 | Più, meno (It.) | More / less; what property? | V alone |
 | Con brio (It.) | With vivacity/energy, often not a literal acceleration | V or explicit accent/dynamics |
-| Con forza, con tutta forza (It.) | With force; emphasis, not equivalent to forte or sfz | V; explicit dynamics/articulation if musician chooses |
+| Con forza, con tutta forza (It.) | With force; emphasis, not equivalent to forte or sfz | N custom dynamic `Con forza` visual until user sets velocity (native automation + legacy MIDI); con tutta forza V |
 | Con fuoco (It.) | With fire/ardor; character | V; not a tempo number |
 | Con spirito, spiritoso (It.) | With spirit / spirited | V |
 | Con anima, animato (It.) | With soul / animated | V, context |
@@ -83,7 +83,7 @@ A working musician-facing search/interpretation backlog for European concert and
 | Mit Kraft, kräftig / kraeftig (De.) | With strength / forcefully | V; explicit dynamics as chosen |
 | Ruhig, innig, zart (De.) | Calmly / inwardly / tenderly | V |
 | Feierlich, ernst, leidenschaftlich (De.) | Solemnly / seriously / passionately | V |
-| Con mosso (unusual), con molto (incomplete) | Preserve unusual exact wording; determine whether transcription or idiom | V; musician decides, never silently correct |
+| Con mosso (unusual), con molto (incomplete) | Preserve unusual exact wording; determine whether transcription or idiom | N neutral 100% tempo template for Con mosso until manually configured; Con molto V expression only |
 
 ### Dynamics, articulation, duration and breath
 

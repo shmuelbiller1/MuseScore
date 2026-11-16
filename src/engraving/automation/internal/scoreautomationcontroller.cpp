@@ -753,7 +753,17 @@ void ScoreAutomationController::addDynamicPoints(const Dynamic* dynamic, int tic
     DynamicInfo info;
     info.tick = tick;
 
-    if (auto ordinaryIt = ORDINARY_DYNAMIC_VALUES.find(dynamicType); ordinaryIt != ORDINARY_DYNAMIC_VALUES.end()) {
+    if (dynamicType == DynamicType::OTHER) {
+        // Unrecognized historical wording is never guessed from its text.
+        // An explicitly assigned MIDI velocity makes it an authored dynamic.
+        // The MPE curve's ordinary levels use approximately five percent per
+        // sixteen velocity units (mp=64 -> 0.475, mf=80 -> 0.525).
+        if (dynamic->velocity() < 1) {
+            return;
+        }
+        const double level = 0.525 + (dynamic->velocity() - 80) * (0.05 / 16.0);
+        info.kind = DynamicInfo::Ordinary { real_t::make(std::clamp(level, 0.0, 1.0)) };
+    } else if (auto ordinaryIt = ORDINARY_DYNAMIC_VALUES.find(dynamicType); ordinaryIt != ORDINARY_DYNAMIC_VALUES.end()) {
         info.kind = DynamicInfo::Ordinary { ordinaryIt->second };
     } else if (auto singleNoteIt = SINGLE_NOTE_DYNAMIC_VALUES.find(dynamicType); singleNoteIt != SINGLE_NOTE_DYNAMIC_VALUES.end()) {
         DynamicInfo::SingleNote singleNote { singleNoteIt->second, std::nullopt };

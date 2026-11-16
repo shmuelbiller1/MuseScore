@@ -270,6 +270,12 @@ PalettePtr PaletteCreator::newDynamicsPalette(bool defaultPalette)
         sp->appendElement(dynamic, TConv::userName(dynamic->dynamicType()));
     }
 
+    // A forceful *character* is not necessarily forte or a single-note sfz.
+    // This custom dynamic remains visual until the musician sets a velocity.
+    auto conForza = makeElement<Dynamic>(paletteScore());
+    conForza->setDynamicType(String::fromAscii(QT_TRANSLATE_NOOP("palette", "Con forza")));
+    sp->appendElement(conForza, QT_TRANSLATE_NOOP("palette", "Con forza"), 1.3);
+
     static const std::vector<HairpinType> hairpins {
         HairpinType::CRESC_LINE,
         HairpinType::DIM_LINE,
@@ -1469,6 +1475,31 @@ PalettePtr PaletteCreator::newTempoPalette(bool defaultPalette)
         sp->appendElement(item, pattern.text, 1.3);
     }
 
+    // Contextual wording keeps the current pace until the musician chooses a
+    // ratio in Properties. This is a functional, neutral starting point, not
+    // a guess that "with motion" means accelerando or that "not very slow"
+    // means Andante. In particular, confirm the unusual "Con mosso" spelling.
+    static const char* contextualTempi[] = {
+        QT_TRANSLATE_NOOP("palette", "Con moto"),
+        QT_TRANSLATE_NOOP("palette", "Con mosso"),
+        QT_TRANSLATE_NOOP("palette", "Nicht sehr langsam"),
+    };
+    for (const char* text : contextualTempi) {
+        auto item = makeElement<TempoText>(paletteScore());
+        item->setXmlText(text);
+        item->setFollowText(false);
+        item->setRelative(1.0);
+        sp->appendElement(item, text, 1.3);
+    }
+
+    // Unlike a comparative marking, Langsam begins a new pace. This is an
+    // editable example BPM, not a historical constant or a synonym for Lento.
+    auto langsam = makeElement<TempoText>(paletteScore());
+    langsam->setXmlText(QT_TRANSLATE_NOOP("palette", "Langsam"));
+    langsam->setFollowText(false);
+    langsam->setTempo(60.0 / 60.0);
+    sp->appendElement(langsam, QT_TRANSLATE_NOOP("palette", "Langsam"), 1.3);
+
     // The modifier belongs to the gradual change, not an immediate tempo
     // text. Both examples retain their own engraved wording and editable
     // factors; a musician must adjust the factor and span to the passage.
@@ -1590,6 +1621,20 @@ PalettePtr PaletteCreator::newTextPalette(bool defaultPalette)
     expressionText->setXmlText(QT_TRANSLATE_NOOP("palette", "expression"));
     expressionText->setPlacement(PlacementV::BELOW);
     sp->appendElement(expressionText, QT_TRANSLATE_NOOP("palette", "Expression text"))->setElementTranslated(true);
+
+    // These are degree modifiers without a governing verb or tempo. Keep
+    // their spelling, but do not turn them into arbitrary speed multipliers.
+    static const char* incompleteModifiers[] = {
+        QT_TRANSLATE_NOOP("palette", "Con molto"),
+        QT_TRANSLATE_NOOP("palette", "Di molto"),
+    };
+    for (const char* text : incompleteModifiers) {
+        auto modifier = makeElement<Expression>(paletteScore());
+        modifier->setTextStyleType(TextStyleType::EXPRESSION);
+        modifier->setXmlText(text);
+        modifier->setPlacement(PlacementV::BELOW);
+        sp->appendElement(modifier, text, 1.3);
+    }
 
     auto is = makeElement<InstrumentChange>(paletteScore());
     is->setXmlText(QT_TRANSLATE_NOOP("palette", "Change instr."));

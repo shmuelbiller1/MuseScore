@@ -29,6 +29,9 @@
 #include "engraving/automation/internal/scoreautomationcontroller.h"
 #include "engraving/automation/tempovalues.h"
 #include "engraving/dom/chord.h"
+#include "engraving/dom/dynamic.h"
+#include "engraving/dom/factory.h"
+#include "engraving/dom/measure.h"
 #include "engraving/dom/note.h"
 #include "engraving/dom/masterscore.h"
 #include "engraving/dom/gradualtempochange.h"
@@ -104,6 +107,38 @@ protected:
 
 MasterScore* ScoreAutomationController_Tests::s_dynamicsScore = nullptr;
 MasterScore* ScoreAutomationController_Tests::s_tempoScore = nullptr;
+
+TEST_F(ScoreAutomationController_Tests, CustomDynamicRequiresAuthoredVelocity)
+{
+    // An ambiguous expression is printed, but must not acquire a playback
+    // level until its editor explicitly chooses one. Use a fresh score so
+    // the shared test fixture and its EIDs are not changed.
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(AUTOMATION_DATA_DIR + u"dynamics.mscx"));
+    ASSERT_TRUE(score);
+    Segment* segment = score->firstMeasure()->findSegmentR(SegmentType::ChordRest, Fraction(2, 4));
+    ASSERT_TRUE(segment);
+    Dynamic* expression = Factory::createDynamic(segment, false);
+    expression->setTrack(0);
+    expression->setDynamicType(u"Con forza");
+    ASSERT_EQ(expression->dynamicType(), DynamicType::OTHER);
+    segment->add(expression);
+
+    const AutomationCurveKey key = AutomationCurveKey::staff(AutomationType::Dynamics, score->staff(0)->id());
+    ScoreAutomationController controller;
+    controller.init(score.get());
+    EXPECT_EQ(controller.automationData()->curve(key).count(960), 0u);
+
+    expression->setVelocity(96);
+    controller.init(score.get());
+    const AutomationCurve& curve = controller.automationData()->curve(key);
+    ASSERT_EQ(curve.count(960), 1u);
+    EXPECT_NEAR(curve.at(960).value.outValue.raw(), F_VALUE, 0.000001);
+    EXPECT_EQ(curve.count(1440), 1u); // following mp still takes effect
+
+    expression->setPlayDynamic(false);
+    controller.init(score.get());
+    EXPECT_EQ(controller.automationData()->curve(key).count(960), 0u);
+}
 
 TEST_F(ScoreAutomationController_Tests, Init_Dynamics_CurveMatchesExpected)
 {

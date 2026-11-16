@@ -77,6 +77,20 @@ Column {
         propertyItem: root.model ? root.model.avoidBarLines : null
     }
 
+    SpinBoxPropertyView {
+        id: customVelocity
+        visible: root.model ? root.model.customDynamic : false
+        titleText: qsTrc("propertiespanel", "Custom dynamic velocity (0 = visual only)")
+        propertyItem: root.model ? root.model.customVelocity : null
+        minValue: 0
+        maxValue: 127
+        step: 1
+        decimals: 0
+        navigationName: "Custom dynamic velocity"
+        navigationPanel: root.navigationPanel
+        navigationRowStart: avoidBarLines.navigationRowEnd + 1
+    }
+
     StyledTextLabel {
         width: parent.width
         visible: root.model ? !root.model.isEmpty : false
@@ -88,7 +102,7 @@ Column {
         id: voicesAndPositionSection
 
         navigationPanel: root.navigationPanel
-        navigationRowStart: avoidBarLines.navigationRowEnd + 1
+        navigationRowStart: customVelocity.visible ? customVelocity.navigationRowEnd + 1 : avoidBarLines.navigationRowEnd + 1
 
         model: root.model
     }

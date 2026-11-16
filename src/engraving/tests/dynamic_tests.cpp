@@ -79,6 +79,22 @@ TEST_F(Engraving_DynamicTests, test1)
     EXPECT_EQ(d->velocity(), 57);
     delete d;
 
+    dynamic->setDynamicType(u"Con forza");
+    dynamic->setProperty(Pid::VELOCITY, 0);
+    d = toDynamic(ScoreRW::writeReadElement(dynamic));
+    ASSERT_TRUE(d);
+    EXPECT_EQ(d->dynamicType(), DynamicType::OTHER);
+    EXPECT_EQ(d->plainText(), u"Con forza");
+    EXPECT_EQ(d->getProperty(Pid::VELOCITY).toInt(), 0);
+    delete d;
+
+    dynamic->setProperty(Pid::VELOCITY, 96);
+    d = toDynamic(ScoreRW::writeReadElement(dynamic));
+    ASSERT_TRUE(d);
+    EXPECT_EQ(d->getProperty(Pid::VELOCITY).toInt(), 96);
+    EXPECT_EQ(d->plainText(), u"Con forza");
+    delete d;
+
     dynamic->setProperty(Pid::AVOID_BARLINES, false);
     dynamic->setPropertyFlags(Pid::AVOID_BARLINES, PropertyFlags::UNSTYLED);
     d = toDynamic(ScoreRW::writeReadElement(dynamic));
