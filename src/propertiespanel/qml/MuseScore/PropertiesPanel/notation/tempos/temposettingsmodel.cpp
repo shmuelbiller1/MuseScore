@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: GPL-3.0-only
  * MuseScore-Studio-CLA-applies
  *
@@ -20,6 +20,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "temposettingsmodel.h"
+
+#include <algorithm>
+
+#include "engraving/dom/tempotext.h"
+#include "engraving/dom/score.h"
 
 #include "dataformatter.h"
 
@@ -66,17 +71,53 @@ void TempoSettingsModel::createProperties()
     });
 
     m_tempo = buildPropertyItem(mu::engraving::Pid::TEMPO);
+    m_relativeFactor = buildPropertyItem(mu::engraving::Pid::TEMPO_CHANGE_FACTOR,
+                                         [this](const mu::engraving::Pid pid, const QVariant& value) {
+        onPropertyValueChanged(pid, value.toDouble() / 100.0);
+    });
 }
 
 void TempoSettingsModel::requestElements()
 {
     m_elementList = m_repository->findElementsByType(mu::engraving::ElementType::TEMPO_TEXT);
+    const bool relative = !m_elementList.isEmpty() && std::all_of(m_elementList.cbegin(), m_elementList.cend(),
+                                                                  [](const mu::engraving::EngravingItem* item) {
+        return mu::engraving::toTempoText(item)->isRelative();
+    });
+    if (relative != m_relativeTempo) {
+        m_relativeTempo = relative;
+        emit relativeTempoChanged();
+    }
+    emit effectiveBpmChanged();
 }
 
 void TempoSettingsModel::loadProperties()
 {
+    // A factor reset or undo can switch the selected marking back to an
+    // absolute tempo without changing the selection itself.
+    const bool relative = !m_elementList.isEmpty() && std::all_of(m_elementList.cbegin(), m_elementList.cend(),
+                                                                  [](const mu::engraving::EngravingItem* item) {
+        return mu::engraving::toTempoText(item)->isRelative();
+    });
+    if (relative != m_relativeTempo) {
+        m_relativeTempo = relative;
+        emit relativeTempoChanged();
+    }
     loadPropertyItem(m_isFollowText);
     loadPropertyItem(m_tempo, formatDoubleFunc);
+    loadPropertyItem(m_relativeFactor, [](const QVariant& factor) -> QVariant {
+        return muse::DataFormatter::roundDouble(factor.toDouble() * 100.0, 1);
+    });
+    emit effectiveBpmChanged();
+}
+
+QString TempoSettingsModel::effectiveBpm() const
+{
+    if (m_elementList.size() != 1 || !m_elementList.front()->score()) {
+        return QStringLiteral("—");
+    }
+    const mu::engraving::TempoText* marking = mu::engraving::toTempoText(m_elementList.front());
+    return QString::number(marking->score()->multipliedTempo(marking->tick()).toBPM().val, 'f', 1);
 }
 
 PropertyItem* TempoSettingsModel::isFollowText() const

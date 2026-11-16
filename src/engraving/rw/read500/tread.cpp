@@ -22,6 +22,8 @@
 
 #include "tread.h"
 
+#include <cmath>
+
 #include "iengravingconfiguration.h" // IWYU pragma: keep
 
 #include "../../types/typesconv.h"
@@ -692,6 +694,11 @@ void TRead::read(TempoText* t, XmlReader& e, ReadContext& ctx)
             t->setTempo(TConv::fromXml(e.readAsciiText(), Constants::DEFAULT_TEMPO));
         } else if (tag == "followText") {
             t->setFollowText(e.readInt());
+        } else if (tag == "tempoChangeFactor") {
+            const double factor = e.readDouble();
+            if (std::isfinite(factor) && factor > 0.0) {
+                t->setRelative(factor);
+            }
         } else if (tag == "type") {
             auto type = e.readAsciiText();
             if (type == "aTempo") {

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * SPDX-License-Identifier: GPL-3.0-only
  * MuseScore-Studio-CLA-applies
  *
@@ -34,6 +34,9 @@ class TempoSettingsModel : public PropertiesPanelAbstractModel
 
     Q_PROPERTY(mu::propertiespanel::PropertyItem * followText READ isFollowText CONSTANT)
     Q_PROPERTY(mu::propertiespanel::PropertyItem * tempo READ tempo CONSTANT)
+    Q_PROPERTY(mu::propertiespanel::PropertyItem * relativeFactor READ relativeFactor CONSTANT)
+    Q_PROPERTY(bool relativeTempo READ relativeTempo NOTIFY relativeTempoChanged)
+    Q_PROPERTY(QString effectiveBpm READ effectiveBpm NOTIFY effectiveBpmChanged)
 
 public:
     explicit TempoSettingsModel(QObject* parent, const muse::modularity::ContextPtr& iocCtx, IElementRepositoryService* repository,
@@ -45,9 +48,18 @@ public:
 
     PropertyItem* isFollowText() const;
     PropertyItem* tempo() const;
+    PropertyItem* relativeFactor() const { return m_relativeFactor; }
+    bool relativeTempo() const { return m_relativeTempo; }
+    QString effectiveBpm() const;
+
+signals:
+    void relativeTempoChanged();
+    void effectiveBpmChanged();
 
 private:
     PropertyItem* m_isFollowText = nullptr;
     PropertyItem* m_tempo = nullptr;
+    PropertyItem* m_relativeFactor = nullptr;
+    bool m_relativeTempo = false;
 };
 }

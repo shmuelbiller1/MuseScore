@@ -549,17 +549,23 @@ void UserPaletteController::editCellProperties(const QModelIndex& index)
     configuration()->paletteCellConfig(cell->id).ch.onReceive(this,
                                                               [this, srcIndex, cell](
                                                                   const IPaletteConfiguration::PaletteCellConfig& config) {
+        const bool aliasesChanged = cell->searchAliases != config.searchAliases;
         cell->name = config.name;
+        cell->searchAliases = config.searchAliases;
         cell->mag = config.scale;
         cell->drawStaff = config.drawStaff;
         cell->xoffset = config.xOffset;
         cell->yoffset = config.yOffset;
         _userPalette->itemDataChanged(srcIndex);
+        if (aliasesChanged) {
+            _userPalette->setTreeChanged();
+        }
     });
 
     QVariantMap properties;
     properties["cellId"] = cell->id;
     properties["name"] = cell->translatedName();
+    properties["searchAliases"] = cell->searchAliases;
     properties["xOffset"] = cell->xoffset;
     properties["yOffset"] = cell->yoffset;
     properties["scale"] = cell->mag;
@@ -606,6 +612,7 @@ void PaletteProvider::init()
     connect(m_userPaletteModel, &PaletteTreeModel::treeChanged, this, &PaletteProvider::notifyAboutUserPaletteChanged);
 
     m_masterPaletteModel = new PaletteTreeModel(PaletteCreator(iocContext()).newMasterPaletteTree(), iocContext(), this);
+    m_searchPaletteModel = new PaletteTreeModel(m_masterPaletteModel->paletteTreePtr(), iocContext(), this);
 
     m_searchFilterModel = new PaletteCellFilterProxyModel(this);
     m_searchFilterModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
@@ -637,9 +644,51 @@ void PaletteProvider::setFilter(const QString& filter)
     // speed up the search in certain other scenarios,
     // e.g. when deleting search characters (going from fewer to more search results).
     m_searchFilterModel->setSourceModel(nullptr);
-    m_searchFilterModel->setFilterFixedString(filter);
+    static_cast<PaletteCellFilterProxyModel*>(m_searchFilterModel)->setSearchText(filter);
     if (!filter.isEmpty()) {
-        m_searchFilterModel->setSourceModel(m_masterPaletteModel);
+        m_searchFilterModel->setSourceModel(m_searchPaletteModel);
+    }
+}
+
+void PaletteProvider::rebuildSearchPalette()
+{
+    if (!m_masterPaletteModel || !m_searchPaletteModel || !m_userPaletteModel) {
+        return;
+    }
+
+    // The master tree is immutable; reuse its palette objects and add a
+    // separate, transient group containing copies of user cells with aliases.
+    // The copies keep their actual engraving elements and printed wording.
+    auto tree = std::make_shared<PaletteTree>();
+    tree->palettes = m_masterPaletteModel->paletteTree()->palettes;
+    auto aliases = std::make_shared<Palette>(iocContext(), Palette::Type::Custom);
+    aliases->setName(QT_TRANSLATE_NOOP("palette", "My search aliases"));
+    aliases->setEditable(false); // edit the actual cell in its user palette
+    const PaletteTree* userTree = m_userPaletteModel->paletteTree();
+    if (userTree) {
+        for (const PalettePtr& palette : userTree->palettes) {
+            for (const PaletteCellPtr& cell : palette->cells()) {
+                if (!cell || !cell->element || !cell->visible || cell->searchAliases.trimmed().isEmpty()) {
+                    continue;
+                }
+                PaletteCellPtr copy = PaletteCell::fromMimeData(cell->toMimeData(), iocContext());
+                if (copy) {
+                    aliases->insertCell(aliases->cellsCount(), copy);
+                }
+            }
+        }
+    }
+    if (aliases->cellsCount()) {
+        tree->append(aliases);
+    }
+
+    const bool bound = m_searchFilterModel && m_searchFilterModel->sourceModel();
+    if (bound) {
+        m_searchFilterModel->setSourceModel(nullptr);
+    }
+    m_searchPaletteModel->setPaletteTree(tree);
+    if (bound) {
+        m_searchFilterModel->setSourceModel(m_searchPaletteModel);
     }
 }
 
@@ -980,6 +1029,7 @@ void PaletteProvider::setUserPaletteTree(PaletteTreePtr tree)
         m_userPaletteModel = new PaletteTreeModel(tree, iocContext(), /* parent */ this);
         connect(m_userPaletteModel, &PaletteTreeModel::treeChanged, this, &PaletteProvider::notifyAboutUserPaletteChanged);
     }
+    rebuildSearchPalette();
 }
 
 void PaletteProvider::setDefaultPaletteTree(PaletteTreePtr tree)

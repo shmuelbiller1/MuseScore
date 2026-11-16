@@ -191,7 +191,19 @@ jobs:
 
     - name: Build and Pack
       run: |
-        bash ./buildscripts/ci/vtests/build_and_pack.sh
+        # This job builds the base ref, not the PR. Retain its real failure
+        # status while surfacing the tail if hosted logs are unavailable.
+        set +e
+        bash ./buildscripts/ci/vtests/build_and_pack.sh 2>&1 | tee "${RUNNER_TEMP}/vtest-reference.log"
+        status=${PIPESTATUS[0]}
+        set -e
+        if (( status != 0 )); then
+          echo '## Reference (base) build failure' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 50 "${RUNNER_TEMP}/vtest-reference.log" >> "$GITHUB_STEP_SUMMARY"
+          detail=$(tail -n 12 "${RUNNER_TEMP}/vtest-reference.log" | tr '\r\n' '  ' | cut -c1-900)
+          echo "::error title=Reference build failed::${detail}"
+          exit "$status"
+        fi
     - name: Show ccache stats
       run: |
         ccache -sv

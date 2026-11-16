@@ -232,7 +232,12 @@ class PaletteCellFilterProxyModel : public QSortFilterProxyModel
 public:
     PaletteCellFilterProxyModel(QObject* parent = nullptr);
 
+    // Keep the user's literal search text: setFilterFixedString() escapes punctuation.
+    void setSearchText(const QString& text);
     bool filterAcceptsRow(int sourceRow, const QModelIndex& sourceParent) const override;
+
+private:
+    QString m_normalizedSearch;
 };
 }
 

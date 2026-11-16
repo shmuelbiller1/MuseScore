@@ -3344,6 +3344,12 @@ void TWrite::write(const TempoText* item, XmlWriter& xml, WriteContext& ctx)
     xml.startElement(item);
     writeProperty(item, xml, Pid::PLAY);
     xml.tag("tempo", TConv::toXml(item->tempo(), Constants::TEMPO_PRECISION));
+    // The absolute tempo is a fallback for older readers. Preserve the
+    // relative interpretation separately so changing a previous tempo after
+    // reopening still changes this instruction's effective BPM.
+    if (item->isRelative()) {
+        xml.tag("tempoChangeFactor", item->relativeValue());
+    }
     if (item->followText()) {
         xml.tag("followText", item->followText());
     }

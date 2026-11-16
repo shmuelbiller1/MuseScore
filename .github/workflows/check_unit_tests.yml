@@ -113,6 +113,30 @@ jobs:
       env:
         ASAN_OPTIONS: "detect_leaks=0"
 
+    # Preserve failed suite names and assertions as check annotations even if
+    # GitHub's compressed runner logs cannot be downloaded by this fork.
+    - name: Report failing tests
+      if: failure()
+      run: python3 tools/historical_performance/report_ci_test_failures.py build.debug
+
+    - name: Isolate MIDI test abort
+      if: failure()
+      run: |
+        if grep -q ':iex_midi_tests$' build.debug/Testing/Temporary/LastTestsFailed.log; then
+          cd build.debug
+          export QT_QPA_PLATFORM=minimal:enable_fonts
+          export ASAN_OPTIONS=detect_leaks=0:new_delete_type_mismatch=0
+          export GTEST_FILTER=MidiExportTests.HistoricalTempo_18Parts_RelativeRampAndPlaybackMultiplier
+          set +e
+          ctest -V -R '^iex_midi_tests$' > midi-repro.log 2>&1
+          status=$?
+          set -e
+          echo '## Isolated historical MIDI export test' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 80 midi-repro.log >> "$GITHUB_STEP_SUMMARY"
+          detail=$(tail -c 900 midi-repro.log | tr '\r\n' '  ' | cut -c1-800)
+          echo "::notice title=Isolated MIDI test exit ${status}::${detail}"
+        fi
+
     - name: Code coverage
       if: github.event_name == 'schedule' || inputs.code_coverage
       run: |

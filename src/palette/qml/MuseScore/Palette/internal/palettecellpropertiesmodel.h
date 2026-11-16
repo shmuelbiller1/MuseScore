@@ -35,6 +35,7 @@ class PaletteCellPropertiesModel : public QObject
     Q_OBJECT
 
     Q_PROPERTY(QString name READ name WRITE setName NOTIFY propertiesChanged)
+    Q_PROPERTY(QString searchAliases READ searchAliases WRITE setSearchAliases NOTIFY propertiesChanged)
     Q_PROPERTY(double xOffset READ xOffset WRITE setXOffset NOTIFY propertiesChanged)
     Q_PROPERTY(double yOffset READ yOffset WRITE setYOffset NOTIFY propertiesChanged)
     Q_PROPERTY(double scaleFactor READ scaleFactor WRITE setScaleFactor NOTIFY propertiesChanged)
@@ -46,6 +47,7 @@ class PaletteCellPropertiesModel : public QObject
 
 public:
     QString name() const;
+    QString searchAliases() const;
     double xOffset() const;
     double yOffset() const;
     double scaleFactor() const;
@@ -56,6 +58,7 @@ public:
 
 public slots:
     void setName(const QString& name);
+    void setSearchAliases(const QString& searchAliases);
     void setXOffset(double xOffset);
     void setYOffset(double yOffset);
     void setScaleFactor(double scale);

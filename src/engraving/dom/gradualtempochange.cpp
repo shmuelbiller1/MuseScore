@@ -22,6 +22,8 @@
 
 #include "gradualtempochange.h"
 
+#include <cmath>
+
 #include "dummyparent.h"
 #include "measure.h"
 #include "rehearsalmark.h"
@@ -186,6 +188,9 @@ bool GradualTempoChange::setProperty(Pid id, const PropertyValue& val)
         m_tempoEasingMethod = val.value<ChangeMethod>();
         break;
     case Pid::TEMPO_CHANGE_FACTOR:
+        if (!std::isfinite(val.toReal()) || val.toReal() <= 0.0) {
+            return false; // never create a silent negative/zero tempo curve
+        }
         m_tempoChangeFactor = val.toReal();
         break;
     case Pid::SNAP_AFTER:

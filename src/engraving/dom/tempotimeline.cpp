@@ -79,9 +79,11 @@ static TempoValues resampleTempoValues(const AutomationCurve& tempoCurve)
             continue;
         }
 
-        const std::optional<AutomationPoint::Ease> pointEase = ease(it->second);
         const real_t arrivalNorm = muse::mpe::resolveInValue(it->second.value, std::nullopt);
-        const bool isFlat = (!pointEase || pointEase->isNone()) && muse::RealIsEqual(arrivalNorm.raw(), currentNorm.raw());
+        // Easing cannot change a flat passage. In particular, an explicit
+        // marking at a ramp's start must not cause a 100% eased ramp to
+        // interpolate retroactively from an earlier, unrelated tempo.
+        const bool isFlat = muse::RealIsEqual(arrivalNorm.raw(), currentNorm.raw());
         if (isFlat) {
             anchorUTick = it->first;
             anchorNorm = it->second.value.outValue;

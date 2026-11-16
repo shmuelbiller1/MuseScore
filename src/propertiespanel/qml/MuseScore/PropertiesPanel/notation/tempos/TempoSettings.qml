@@ -47,6 +47,7 @@ Column {
         id: followWrittenTempoCheckbox
         text: qsTrc("propertiespanel", "Follow written tempo")
         propertyItem: root.model ? root.model.followText : null
+        enabled: root.model ? !root.model.isEmpty : false
 
         navigation.name: "FollowCheckBox"
         navigation.panel: root.navigationPanel
@@ -54,8 +55,26 @@ Column {
     }
 
     SpinBoxPropertyView {
+        titleText: qsTrc("propertiespanel", "Relative to preceding tempo")
+        propertyItem: root.model ? root.model.relativeFactor : null
+        visible: root.model ? root.model.relativeTempo : false
+        // Metric modulations follow the written equation by default. Turn
+        // that off before overriding its computed relative factor.
+        enabled: root.model ? !root.model.isEmpty && !followWrittenTempoCheckbox.checked : false
+        minValue: 0.1
+        maxValue: 1000
+        step: 0.1
+        decimals: 1
+        measureUnitsSymbol: "%"
+        navigationName: "Relative tempo factor"
+        navigationPanel: root.navigationPanel
+        navigationRowStart: followWrittenTempoCheckbox.navigation.row + 1
+    }
+
+    SpinBoxPropertyView {
         titleText: qsTrc("propertiespanel", "Override written tempo")
         propertyItem: root.model ? root.model.tempo : null
+        visible: root.model ? !root.model.relativeTempo : true
         enabled: root.model ? !root.model.isEmpty && !followWrittenTempoCheckbox.checked : false
 
         measureUnitsSymbol: qsTrc("propertiespanel", "BPM")
@@ -63,5 +82,13 @@ Column {
         navigationName: "Override"
         navigationPanel: root.navigationPanel
         navigationRowStart: followWrittenTempoCheckbox.navigation.row + 1
+    }
+
+    StyledTextLabel {
+        width: parent.width
+        visible: root.model ? !root.model.isEmpty : false
+        text: qsTrc("propertiespanel", "Effective tempo at this marking: %1 BPM")
+              .arg(root.model ? root.model.effectiveBpm : "—")
+        horizontalAlignment: Text.AlignLeft
     }
 }

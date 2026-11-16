@@ -1447,6 +1447,50 @@ PalettePtr PaletteCreator::newTempoPalette(bool defaultPalette)
         }
     }
 
+    // Comparative tempo instructions change the tempo immediately, not over a
+    // span. These are editable *starting* ratios, not translations of the
+    // manuscript into a universal BPM. The original text remains independent
+    // of the relative factor and is saved with the score.
+    struct RelativeTempoPattern {
+        const char* text;
+        double factor;
+    };
+    static const RelativeTempoPattern relativeTempoPatterns[] = {
+        { QT_TRANSLATE_NOOP("palette", "Meno mosso"), 0.90 },
+        { QT_TRANSLATE_NOOP("palette", "Più mosso"), 1.10 },
+        { QT_TRANSLATE_NOOP("palette", "Langsamer"), 0.90 },
+        { QT_TRANSLATE_NOOP("palette", "Schneller"), 1.10 },
+    };
+    for (const RelativeTempoPattern& pattern : relativeTempoPatterns) {
+        auto item = makeElement<TempoText>(paletteScore());
+        item->setXmlText(pattern.text);
+        item->setFollowText(false);
+        item->setRelative(pattern.factor);
+        sp->appendElement(item, pattern.text, 1.3);
+    }
+
+    // The modifier belongs to the gradual change, not an immediate tempo
+    // text. Both examples retain their own engraved wording and editable
+    // factors; a musician must adjust the factor and span to the passage.
+    struct QualifiedRitardando {
+        const char* text;
+        double initialFactor;
+    };
+    static const QualifiedRitardando qualifiedRitardandi[] = {
+        { QT_TRANSLATE_NOOP("palette", "Poco rit."), 0.90 },
+        { QT_TRANSLATE_NOOP("palette", "Molto rit."), 0.60 },
+    };
+    for (const QualifiedRitardando& pattern : qualifiedRitardandi) {
+        auto item = makeElement<GradualTempoChange>(paletteScore());
+        item->setTempoChangeType(GradualTempoChangeType::Ritardando);
+        item->setProperty(Pid::TEMPO_CHANGE_FACTOR, pattern.initialFactor);
+        item->setPropertyFlags(Pid::TEMPO_CHANGE_FACTOR, PropertyFlags::NOSTYLE);
+        const String text = String::fromUtf8(pattern.text);
+        item->setBeginText(text);
+        item->setContinueText(String(u"(%1)").arg(text));
+        sp->appendElement(item, pattern.text, 1.3)->yoffset = 0.4;
+    }
+
     static const std::map<GradualTempoChangeType, const char*> DEFAULT_TEMPO_CHANGE = {
         { GradualTempoChangeType::Accelerando, QT_TRANSLATE_NOOP("palette", "accel.") },
         { GradualTempoChangeType::Allargando,  QT_TRANSLATE_NOOP("palette", "allarg.") },

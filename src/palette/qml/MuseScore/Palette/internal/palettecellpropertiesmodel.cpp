@@ -33,6 +33,7 @@ void PaletteCellPropertiesModel::load(const QVariant& properties)
 
     m_cellId = map["cellId"].toString();
     m_originConfig.name = map["name"].toString();
+    m_originConfig.searchAliases = map["searchAliases"].toString();
     m_originConfig.xOffset = map["xOffset"].toDouble();
     m_originConfig.yOffset = map["yOffset"].toDouble();
     m_originConfig.scale = map["scale"].toDouble();
@@ -57,6 +58,11 @@ void PaletteCellPropertiesModel::setConfig(const IPaletteConfiguration::PaletteC
 QString PaletteCellPropertiesModel::name() const
 {
     return m_currentConfig.name;
+}
+
+QString PaletteCellPropertiesModel::searchAliases() const
+{
+    return m_currentConfig.searchAliases;
 }
 
 double PaletteCellPropertiesModel::xOffset() const
@@ -88,6 +94,16 @@ void PaletteCellPropertiesModel::setName(const QString& name)
     }
 
     m_currentConfig.name = name;
+    setConfig(m_currentConfig);
+}
+
+void PaletteCellPropertiesModel::setSearchAliases(const QString& searchAliases)
+{
+    if (this->searchAliases() == searchAliases) {
+        return;
+    }
+
+    m_currentConfig.searchAliases = searchAliases;
     setConfig(m_currentConfig);
 }
 
