@@ -169,25 +169,26 @@ QString markingPlaybackHelp(const PaletteCell* cell)
         QString meaning;
         switch (toGradualTempoChange(cell->element.get())->tempoChangeType()) {
         case GradualTempoChangeType::Accelerando:
-            meaning = muse::qtrc("palette", "Gradually faster. ");
+            meaning = muse::qtrc("palette", "Gradually faster.");
             break;
         case GradualTempoChangeType::Ritardando:
-            meaning = muse::qtrc("palette", "Gradually slower. ");
+            meaning = muse::qtrc("palette", "Gradually slower.");
             break;
         case GradualTempoChangeType::Rallentando:
-            meaning = muse::qtrc("palette", "Gradually slowing and broadening. ");
+            meaning = muse::qtrc("palette", "Gradually slowing and broadening.");
             break;
         case GradualTempoChangeType::Allargando:
-            meaning = muse::qtrc("palette", "Broadening and slowing. ");
+            meaning = muse::qtrc("palette", "Broadening and slowing.");
             break;
         case GradualTempoChangeType::Stringendo:
-            meaning = muse::qtrc("palette", "Pressing forward, typically faster. ");
+            meaning = muse::qtrc("palette", "Pressing forward, typically faster.");
             break;
         default:
             break;
         }
-        return meaning + muse::qtrc("palette",
-                                    "Playback: partial — tempo curve only. Adjust the change factor and span for this passage; other expression is not inferred.");
+        const QString playback = muse::qtrc("palette",
+                                            "Playback: partial — tempo curve only. Adjust the change factor and span for this passage; other expression is not inferred.");
+        return meaning.isEmpty() ? playback : meaning + QLatin1Char(' ') + playback;
     }
     if (cell->element->isTempoText()) {
         const TempoText* tempo = toTempoText(cell->element.get());
