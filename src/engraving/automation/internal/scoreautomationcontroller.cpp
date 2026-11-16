@@ -72,10 +72,20 @@ static AutomationPoint makeTempoPoint(real_t normalizedBps, std::optional<EID> i
     return point;
 }
 
-//! TODO: map EXPONENTIAL/EASE_IN/EASE_OUT/EASE_IN_OUT to a real ease shape; every method is linear for now
-static AutomationPoint::Ease changeMethodToEase(ChangeMethod)
+// MPE's bend point delays or advances the change between the score's
+// authored start and arrival tempi without assigning a universal BPM value.
+static AutomationPoint::Ease changeMethodToEase(ChangeMethod method)
 {
-    return AutomationPoint::Ease::none();
+    switch (method) {
+    case ChangeMethod::EASE_IN:
+        return { real_t::make(0.5), real_t::make(0.25) };
+    case ChangeMethod::EASE_OUT:
+        return { real_t::make(0.5), real_t::make(0.75) };
+    default:
+        // EXPONENTIAL and EASE_IN_OUT need more than one bend to be
+        // represented faithfully; preserve their legacy linear behavior.
+        return AutomationPoint::Ease::none();
+    }
 }
 
 //! NOTE: segments are ordered by utick; returns the index of the last one starting at or before utick

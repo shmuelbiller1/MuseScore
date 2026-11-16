@@ -334,6 +334,10 @@ PropertyValue TempoText::getProperty(Pid propertyId) const
         return m_tempo;
     case Pid::TEMPO_FOLLOW_TEXT:
         return m_followText;
+    case Pid::TEMPO_CHANGE_FACTOR:
+        // Zero is the unambiguous "absolute tempo" state. This also lets
+        // undo restore a previously absolute marking after editing its factor.
+        return m_isRelative ? m_relative : 0.0;
     case Pid::TEMPO_ALIGN_RIGHT_OF_REHEARSAL_MARK:
         return m_alignRightOfRehearsalMark;
     default:
@@ -356,6 +360,20 @@ bool TempoText::setProperty(Pid propertyId, const PropertyValue& v)
         break;
     case Pid::TEMPO_FOLLOW_TEXT:
         setFollowText(v.toBool());
+        break;
+    case Pid::TEMPO_CHANGE_FACTOR:
+        if (!std::isfinite(v.toReal()) || v.toReal() < 0.0) {
+            return false;
+        }
+        if (v.toReal() == 0.0) {
+            m_isRelative = false;
+            m_relative = 1.0;
+        } else {
+            setRelative(v.toReal());
+        }
+        // Do not change followText here: metric-modulation markings may
+        // intentionally parse their note-value equation. Historical text
+        // templates explicitly start with followText disabled.
         break;
     case Pid::TEMPO_ALIGN_RIGHT_OF_REHEARSAL_MARK:
         m_alignRightOfRehearsalMark = v.toBool();
@@ -385,6 +403,8 @@ PropertyValue TempoText::propertyDefault(Pid id) const
         return BeatsPerSecond(2.0);
     case Pid::TEMPO_FOLLOW_TEXT:
         return false;
+    case Pid::TEMPO_CHANGE_FACTOR:
+        return 0.0; // absolute tempo; positive values enable relative interpretation
     case Pid::TEMPO_ALIGN_RIGHT_OF_REHEARSAL_MARK:
         return true;
     default:

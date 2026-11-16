@@ -23,6 +23,7 @@
 #include "palettemodel.h"
 
 #include <QMimeData>
+#include <QStringList>
 
 #include "internal/palettetree.h"
 #include "internal/palettecelliconengine.h"
@@ -30,7 +31,12 @@
 #include "engraving/dom/actionicon.h"
 #include "engraving/dom/beam.h"
 #include "engraving/dom/chordrest.h"
+#include "engraving/dom/dynamic.h"
+#include "engraving/dom/gradualtempochange.h"
+#include "engraving/dom/hairpin.h"
 #include "engraving/dom/note.h"
+#include "engraving/dom/ornament.h"
+#include "engraving/dom/tempotext.h"
 #include "engraving/dom/select.h"
 
 #include "modularity/ioc.h"
@@ -39,6 +45,157 @@
 using namespace mu;
 using namespace mu::palette;
 using namespace mu::engraving;
+
+namespace {
+// Search terms are intentionally attached to an engraving *type*, not to a
+// translated tooltip. In particular, "langsamer" (slower) is NOT an alias for
+// "ritardando" (gradually slower), and "poco rit." is NOT an unqualified rit.
+// These aliases only locate existing cells; they never change the score text.
+QStringList historicalAliases(const PaletteCell* cell)
+{
+    if (!cell || !cell->element) {
+        return {};
+    }
+    if (cell->element->isTempoText()) {
+        const TempoText* tempo = toTempoText(cell->element.get());
+        if (tempo->isATempo()) {
+            return { QStringLiteral("return to previous tempo"), QStringLiteral("zurück zum tempo"),
+                     QStringLiteral("zurueck zum tempo") };
+        }
+        if (tempo->isTempoPrimo()) {
+            return { QStringLiteral("tempo i"), QStringLiteral("return to opening tempo"),
+                     QStringLiteral("anfangstempo") };
+        }
+    } else if (cell->element->isGradualTempoChange()) {
+        // Qualified templates share the ritardando engraving type, but a
+        // query for bare "ritardando" must not also suggest poco/molto.
+        if (cell->name.compare(QStringLiteral("Poco rit."), Qt::CaseInsensitive) == 0) {
+            return { QStringLiteral("poco ritardando"), QStringLiteral("poco ritard.") };
+        }
+        if (cell->name.compare(QStringLiteral("Molto rit."), Qt::CaseInsensitive) == 0) {
+            return { QStringLiteral("molto ritardando"), QStringLiteral("molto ritard.") };
+        }
+        switch (toGradualTempoChange(cell->element.get())->tempoChangeType()) {
+        case GradualTempoChangeType::Accelerando:
+            return { QStringLiteral("accelerando"), QStringLiteral("accel."), QStringLiteral("acc."),
+                     QStringLiteral("gradually faster"), QStringLiteral("allmählich schneller"),
+                     QStringLiteral("allmaehlich schneller") };
+        case GradualTempoChangeType::Ritardando:
+            // "rit." is also used for ritenuto; don't pretend it has a
+            // uniquely determined gradual interpretation.
+            return { QStringLiteral("ritardando"), QStringLiteral("ritard."),
+                     QStringLiteral("gradually slower"), QStringLiteral("allmählich langsamer"),
+                     QStringLiteral("allmaehlich langsamer") };
+        case GradualTempoChangeType::Rallentando:
+            return { QStringLiteral("rallentando"), QStringLiteral("rall."), QStringLiteral("rallent.") };
+        case GradualTempoChangeType::Allargando:
+            return { QStringLiteral("allargando"), QStringLiteral("allarg.") };
+        case GradualTempoChangeType::Stringendo:
+            return { QStringLiteral("stringendo"), QStringLiteral("string.") };
+        default:
+            break;
+        }
+    } else if (cell->element->isDynamic()) {
+        switch (toDynamic(cell->element.get())->dynamicType()) {
+        case DynamicType::P: return { QStringLiteral("piano") };
+        case DynamicType::F: return { QStringLiteral("forte") };
+        case DynamicType::SFZ: return { QStringLiteral("sforzando") };
+        case DynamicType::RFZ: return { QStringLiteral("rinforzando") };
+        default: break;
+        }
+    } else if (cell->element->isHairpin()) {
+        switch (toHairpin(cell->element.get())->hairpinType()) {
+        case HairpinType::CRESC_LINE:
+        case HairpinType::CRESC_HAIRPIN:
+            return { QStringLiteral("crescendo"), QStringLiteral("cresc."), QStringLiteral("gradually louder") };
+        case HairpinType::DIM_LINE:
+        case HairpinType::DIM_HAIRPIN:
+            return { QStringLiteral("diminuendo"), QStringLiteral("dim."), QStringLiteral("decrescendo"),
+                     QStringLiteral("decresc."), QStringLiteral("gradually softer") };
+        default: break;
+        }
+    } else if (cell->element->isOrnament()) {
+        switch (toOrnament(cell->element.get())->symId()) {
+        case SymId::ornamentTrill: return { QStringLiteral("trillo"), QStringLiteral("triller") };
+        case SymId::ornamentTurn: return { QStringLiteral("gruppetto") };
+        default: break; // historical mordent direction is ambiguous
+        }
+    } else if (cell->element->isArticulation()) {
+        switch (toArticulation(cell->element.get())->symId()) {
+        case SymId::articStaccatoAbove: return { QStringLiteral("detached"), QStringLiteral("staccato") };
+        case SymId::articTenutoAbove: return { QStringLiteral("held note"), QStringLiteral("tenuto") };
+        case SymId::articMarcatoAbove: return { QStringLiteral("marked"), QStringLiteral("marcato") };
+        default: break;
+        }
+    }
+    return {};
+}
+
+QString normalizedSearchText(const QString& text)
+{
+    const QString decomposed = text.normalized(QString::NormalizationForm_D);
+    QString result;
+    result.reserve(decomposed.size());
+    for (QChar ch : decomposed) {
+        const QChar::Category category = ch.category();
+        if (category != QChar::Mark_NonSpacing && category != QChar::Mark_SpacingCombining
+            && category != QChar::Mark_Enclosing) {
+            result += ch;
+        }
+    }
+    return result.toCaseFolded();
+}
+
+QString markingPlaybackHelp(const PaletteCell* cell)
+{
+    if (!cell || !cell->element) {
+        return {};
+    }
+    if (cell->element->isGradualTempoChange()) {
+        QString meaning;
+        switch (toGradualTempoChange(cell->element.get())->tempoChangeType()) {
+        case GradualTempoChangeType::Accelerando:
+            meaning = muse::qtrc("palette", "Gradually faster. "); break;
+        case GradualTempoChangeType::Ritardando:
+            meaning = muse::qtrc("palette", "Gradually slower. "); break;
+        case GradualTempoChangeType::Rallentando:
+            meaning = muse::qtrc("palette", "Gradually slowing and broadening. "); break;
+        case GradualTempoChangeType::Allargando:
+            meaning = muse::qtrc("palette", "Broadening and slowing. "); break;
+        case GradualTempoChangeType::Stringendo:
+            meaning = muse::qtrc("palette", "Pressing forward, typically faster. "); break;
+        default:
+            break;
+        }
+        return meaning + muse::qtrc("palette", "Playback: partial — tempo curve only. Adjust the change factor and span for this passage; other expression is not inferred.");
+    }
+    if (cell->element->isTempoText()) {
+        const TempoText* tempo = toTempoText(cell->element.get());
+        if (!tempo->playTempoText()) {
+            return muse::qtrc("palette", "Playback: visual only (tempo playback disabled).");
+        }
+        if ((tempo->isATempo() || tempo->isTempoPrimo()) && tempo->followText()) {
+            return muse::qtrc("palette", "Playback: tempo restoration when follow-text is enabled. Check the resulting BPM in context.");
+        }
+        if (tempo->isRelative()) {
+            return muse::qtrc("palette", "Playback: functional immediate relative tempo. The initial percentage is adjustable in Properties; it is not a universal interpretation.");
+        }
+        return muse::qtrc("palette", "Playback: functional absolute tempo change. Named tempo presets have editable BPM, not a universal historical value.");
+    }
+    if (cell->element->isDynamic()) {
+        return toDynamic(cell->element.get())->playDynamic()
+               ? muse::qtrc("palette", "Playback: partial — dynamics automation; actual loudness depends on the sound profile.")
+               : muse::qtrc("palette", "Playback: visual only (dynamic playback disabled).");
+    }
+    if (cell->element->isHairpin()) {
+        return muse::qtrc("palette", "Playback: partial — gradual dynamics automation; set span and target level. Sound profile affects the result.");
+    }
+    if (cell->element->isOrnament() || cell->element->isArticulation()) {
+        return muse::qtrc("palette", "Playback: partial; rendering depends on the ornament/articulation type and instrument profile. Audition this part.");
+    }
+    return {};
+}
+}
 
 //---------------------------------------------------------
 //   PaletteTreeModel::PaletteTreeModel
@@ -326,8 +483,12 @@ QVariant PaletteTreeModel::data(const QModelIndex& index, int role) const
             return QVariant();             // Don't show element names in
         // item views (i.e. just show icons). If you need
         // to know the name, use the ToolTip instead.
-        case Qt::ToolTipRole:
-            return cell->translatedName();
+        case Qt::ToolTipRole: {
+            const QString help = markingPlaybackHelp(cell.get());
+            return help.isEmpty() ? cell->translatedName() : cell->translatedName() + QStringLiteral("\n") + help;
+        }
+        case Qt::AccessibleDescriptionRole:
+            return markingPlaybackHelp(cell.get());
         case Qt::AccessibleTextRole: {
             QString name = cell->translatedName();
             //ScoreAccessibility::makeReadable(name); //! TODO
@@ -1120,6 +1281,12 @@ PaletteCellFilterProxyModel::PaletteCellFilterProxyModel(QObject* parent)
     setFilterRole(Qt::ToolTipRole);   // palette cells have no data for DisplayRole
 }
 
+void PaletteCellFilterProxyModel::setSearchText(const QString& text)
+{
+    m_normalizedSearch = normalizedSearchText(text);
+    setFilterFixedString(text);
+}
+
 //---------------------------------------------------------
 //   PaletteCellFilterProxyModel::filterAcceptsRow
 //---------------------------------------------------------
@@ -1129,17 +1296,31 @@ bool PaletteCellFilterProxyModel::filterAcceptsRow(int sourceRow, const QModelIn
     const QAbstractItemModel* model = sourceModel();
     const QModelIndex rowIndex = model->index(sourceRow, 0, sourceParent);
     const int rowCount = model->rowCount(rowIndex);
-
-    if (rowCount == 0) {
-        if (QSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent)) {
+    const auto matches = [this, model](const QModelIndex& index) {
+        if (normalizedSearchText(model->data(index, Qt::ToolTipRole).toString()).contains(m_normalizedSearch)) {
             return true;
         }
-        // accept row if its parent is accepted by filter: necessary to be able to search by palette name
-        if (sourceParent.isValid()
-            && QSortFilterProxyModel::filterAcceptsRow(sourceParent.row(), sourceParent.parent())) {
-            return true;
+        const PaletteCell* cell = model->data(index, PaletteTreeModel::PaletteCellRole).value<const PaletteCell*>();
+        for (const QString& alias : historicalAliases(cell)) {
+            const QString normalizedAlias = normalizedSearchText(alias);
+            // A word within a qualified instruction is not itself a synonym:
+            // searching "langsamer" must not select "allmählich langsamer".
+            const bool matchesAlias = alias.contains(QLatin1Char(' '))
+                                      ? normalizedAlias.startsWith(m_normalizedSearch)
+                                      : normalizedAlias.contains(m_normalizedSearch);
+            if (matchesAlias) {
+                return true;
+            }
         }
         return false;
+    };
+
+    if (rowCount == 0) {
+        if (matches(rowIndex)) {
+            return true;
+        }
+        // Accept every cell if its palette name is searched for.
+        return sourceParent.isValid() && matches(sourceParent);
     }
 
     for (int i = 0; i < rowCount; ++i) {

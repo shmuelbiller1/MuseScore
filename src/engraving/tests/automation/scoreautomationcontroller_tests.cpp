@@ -22,13 +22,18 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
+
 #include "global/async/asyncable.h"
 
 #include "engraving/automation/internal/scoreautomationcontroller.h"
 #include "engraving/automation/tempovalues.h"
 #include "engraving/dom/masterscore.h"
+#include "engraving/dom/gradualtempochange.h"
 #include "engraving/dom/repeatlist.h"
+#include "engraving/dom/segment.h"
 #include "engraving/dom/staff.h"
+#include "engraving/dom/tempotext.h"
 #include "engraving/types/fraction.h"
 #include "engraving/types/types.h"
 
@@ -667,6 +672,109 @@ TEST_F(ScoreAutomationController_Tests, Init_Tempo_CurveMatchesExpected)
     expectedCurve[23040] = generatedPoint(TEMPO_1_5,  TEMPO_3);   // 2nd pass end of M6: fermata recovery
 
     checkCurvesMatch(controller.automationData()->curve(TEMPO_KEY), expectedCurve);
+}
+
+TEST_F(ScoreAutomationController_Tests, RelativeTempo_OverlappingRampAndNativeRoundTrip)
+{
+    // M1: 180 BPM. M2: Meno mosso at 90% immediately, then a 0.5
+    // ritardando over that measure. M5: tempo primo restores 180 BPM.
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(AUTOMATION_DATA_DIR + u"tempo_relative.mscx"));
+    ASSERT_TRUE(score);
+    Segment* segment = score->tick2segment(Fraction::fromTicks(1920), false, SegmentType::ChordRest);
+    ASSERT_TRUE(segment);
+    TempoText* marking = nullptr;
+    for (EngravingItem* item : segment->annotations()) {
+        if (item->isTempoText()) {
+            marking = toTempoText(item);
+            break;
+        }
+    }
+    ASSERT_TRUE(marking);
+    EXPECT_EQ(marking->xmlText(), u"Meno mosso");
+    EXPECT_TRUE(marking->isRelative());
+    EXPECT_DOUBLE_EQ(marking->relativeValue(), 0.9);
+    ASSERT_FALSE(score->spannerMap().map().empty());
+    Spanner* spanner = score->spannerMap().map().begin()->second;
+    ASSERT_TRUE(spanner->isGradualTempoChange());
+    auto* ramp = toGradualTempoChange(spanner);
+    EXPECT_DOUBLE_EQ(ramp->tempoChangeFactor(), 0.5);
+    EXPECT_EQ(ramp->easingMethod(), ChangeMethod::EASE_IN);
+    EXPECT_FALSE(ramp->setProperty(Pid::TEMPO_CHANGE_FACTOR, 0.0));
+    EXPECT_DOUBLE_EQ(ramp->tempoChangeFactor(), 0.5);
+
+    ScoreAutomationController controller;
+    controller.init(score.get());
+    const TempoTimeline& timeline = controller.tempoTimeline();
+    EXPECT_NEAR(timeline.tempo(1920).toBPM().val, 162.0, 0.01);
+    EXPECT_NEAR(timeline.tempo(2880).toBPM().val, 141.75, 0.01); // eased-in midpoint (25% of change)
+    EXPECT_NEAR(timeline.tempo(3840).toBPM().val, 81.0, 0.01);
+    EXPECT_NEAR(timeline.tempo(5760).toBPM().val, 162.0, 0.01); // a tempo: pre-ramp state
+    EXPECT_NEAR(timeline.tempo(7680).toBPM().val, 180.0, 0.01); // tempo primo
+    EXPECT_NEAR(timeline.tempo(1920 + 11520).toBPM().val, 162.0, 0.01);
+
+    std::unique_ptr<EngravingItem> reloaded(ScoreRW::writeReadElement(marking));
+    ASSERT_TRUE(reloaded);
+    const TempoText* restored = toTempoText(reloaded.get());
+    EXPECT_TRUE(restored->isRelative());
+    EXPECT_DOUBLE_EQ(restored->relativeValue(), 0.9);
+    EXPECT_EQ(restored->xmlText(), marking->xmlText());
+
+    ASSERT_TRUE(ScoreRW::saveScore(score.get(), u"tempo-relative-round-trip.mscx"));
+    std::unique_ptr<MasterScore> reopened(ScoreRW::readScore(u"tempo-relative-round-trip.mscx", true));
+    ASSERT_TRUE(reopened);
+    Segment* reopenedSegment = reopened->tick2segment(Fraction::fromTicks(1920), false, SegmentType::ChordRest);
+    ASSERT_TRUE(reopenedSegment);
+    const TempoText* reopenedMarking = nullptr;
+    for (EngravingItem* item : reopenedSegment->annotations()) {
+        if (item->isTempoText()) {
+            reopenedMarking = toTempoText(item);
+            break;
+        }
+    }
+    ASSERT_TRUE(reopenedMarking);
+    EXPECT_EQ(reopenedMarking->xmlText(), u"Meno mosso");
+    EXPECT_TRUE(reopenedMarking->isRelative());
+    EXPECT_DOUBLE_EQ(reopenedMarking->relativeValue(), 0.9);
+    ScoreAutomationController reopenedController;
+    reopenedController.init(reopened.get());
+    EXPECT_NEAR(reopenedController.tempoTimeline().tempo(2880).toBPM().val, 141.75, 0.01);
+    Segment* openingSegment = reopened->tick2segment(Fraction::fromTicks(0), false, SegmentType::ChordRest);
+    ASSERT_TRUE(openingSegment);
+    TempoText* openingTempo = nullptr;
+    for (EngravingItem* item : openingSegment->annotations()) {
+        if (item->isTempoText()) {
+            openingTempo = toTempoText(item);
+            break;
+        }
+    }
+    ASSERT_TRUE(openingTempo);
+    EXPECT_TRUE(openingTempo->setProperty(Pid::TEMPO, BeatsPerSecond(2.0)));
+    ScoreAutomationController changedOpening;
+    changedOpening.init(reopened.get());
+    EXPECT_NEAR(changedOpening.tempoTimeline().tempo(1920).toBPM().val, 108.0, 0.01);
+    EXPECT_NEAR(changedOpening.tempoTimeline().tempo(3840).toBPM().val, 54.0, 0.01);
+    EXPECT_EQ(reopenedMarking->xmlText(), u"Meno mosso");
+
+    EXPECT_TRUE(ramp->setProperty(Pid::TEMPO_EASING_METHOD, ChangeMethod::EASE_OUT));
+    ScoreAutomationController easedOut;
+    easedOut.init(score.get());
+    EXPECT_NEAR(easedOut.tempoTimeline().tempo(2880).toBPM().val, 101.25, 0.01);
+    EXPECT_NEAR(easedOut.tempoTimeline().tempo(3840).toBPM().val, 81.0, 0.01);
+
+    EXPECT_TRUE(marking->setProperty(Pid::TEMPO_CHANGE_FACTOR, 0.8));
+    ScoreAutomationController adjusted;
+    adjusted.init(score.get());
+    EXPECT_NEAR(adjusted.tempoTimeline().tempo(1920).toBPM().val, 144.0, 0.01);
+    EXPECT_NEAR(adjusted.tempoTimeline().tempo(3840).toBPM().val, 72.0, 0.01);
+    EXPECT_EQ(marking->xmlText(), u"Meno mosso");
+
+    // Undoing a factor change on an originally absolute marking must be able
+    // to restore the absolute state, not leave a relative factor of 100%.
+    EXPECT_TRUE(marking->setProperty(Pid::TEMPO_CHANGE_FACTOR, 0.0));
+    EXPECT_FALSE(marking->isRelative());
+    EXPECT_DOUBLE_EQ(marking->getProperty(Pid::TEMPO_CHANGE_FACTOR).toReal(), 0.0);
+    EXPECT_TRUE(marking->setProperty(Pid::TEMPO_CHANGE_FACTOR, 0.9));
+    EXPECT_TRUE(marking->isRelative());
 }
 
 TEST_F(ScoreAutomationController_Tests, EditPoints_Tempo_UserPointCascadesToLaterMarkings)

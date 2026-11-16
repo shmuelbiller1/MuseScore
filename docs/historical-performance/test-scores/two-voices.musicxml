@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<score-partwise version="4.0">
+  <work><work-title>Public-domain-independent timing probe</work-title></work>
+  <movement-title>Timing and Hebrew syllable probe (synthetic, not a manuscript)</movement-title>
+  <identification><creator type="composer">Historical performance QA</creator></identification>
+  <defaults><scaling><millimeters>7</millimeters><tenths>40</tenths></scaling></defaults>
+  <part-list>
+    <score-part id="P1"><part-name>Soprano probe</part-name><part-abbreviation>S</part-abbreviation><score-instrument id="I1"><instrument-name>Voice</instrument-name></score-instrument><midi-instrument id="I1"><midi-channel>1</midi-channel><midi-program>54</midi-program></midi-instrument></score-part>
+    <score-part id="P2"><part-name>Tenor probe</part-name><part-abbreviation>T</part-abbreviation><score-instrument id="I2"><instrument-name>Voice</instrument-name></score-instrument><midi-instrument id="I2"><midi-channel>2</midi-channel><midi-program>54</midi-program></midi-instrument></score-part>
+  </part-list>
+  <part id="P1">
+    <measure implicit="no" number="1">
+      <attributes><divisions>480</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>
+      <direction placement="above"><direction-type><words>Andante (chosen: quarter = 80)</words></direction-type><sound tempo="80"/></direction>
+      <note default-x="10"><pitch><step>C</step><octave>5</octave></pitch><duration>480</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>נֵר</text></lyric></note>
+      <note><pitch><step>D</step><octave>5</octave></pitch><duration>480</duration><type>quarter</type><lyric number="1"><syllabic>single</syllabic><text>אוֹר</text></lyric></note>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>480</duration><type>quarter</type><notations><articulations><staccato/></articulations></notations></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>480</duration><type>quarter</type></note>
+    </measure>
+    <measure implicit="no" number="2">
+      <!-- The words are intentional: import MUST NOT invent an unapproved factor for poco. Add a typed, configured gradual line manually in Studio for the playback test. -->
+      <direction placement="above"><direction-type><words>Poco rit.</words></direction-type></direction>
+      <direction placement="below"><direction-type><dynamics default-x="3" default-y="-40"><p/></dynamics></direction-type><sound dynamics="44"/></direction>
+      <note><pitch><step>G</step><octave>5</octave></pitch><duration>960</duration><type>half</type><notations><fermata type="upright"/></notations><lyric number="1"><syllabic>single</syllabic><text>לַיְלָה</text></lyric></note>
+      <note><pitch><step>F</step><octave>5</octave></pitch><duration>960</duration><type>half</type></note>
+    </measure>
+    <measure implicit="no" number="3">
+      <direction placement="above"><direction-type><words>a tempo (probe: quarter = 80)</words></direction-type><sound tempo="80"/></direction>
+      <note><pitch><step>E</step><octave>5</octave></pitch><duration>1920</duration><type>whole</type></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure implicit="no" number="1">
+      <attributes><divisions>480</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>F</sign><line>4</line></clef></attributes>
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>960</duration><type>half</type></note>
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>960</duration><type>half</type></note>
+    </measure>
+    <measure implicit="no" number="2">
+      <note><pitch><step>C</step><octave>3</octave></pitch><duration>960</duration><type>half</type><notations><fermata type="upright"/></notations></note>
+      <note><pitch><step>G</step><octave>2</octave></pitch><duration>960</duration><type>half</type></note>
+    </measure>
+    <measure implicit="no" number="3"><note><pitch><step>C</step><octave>3</octave></pitch><duration>1920</duration><type>whole</type></note></measure>
+  </part>
+</score-partwise>
