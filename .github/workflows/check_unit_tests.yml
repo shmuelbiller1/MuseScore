@@ -88,10 +88,12 @@ jobs:
         bash ./buildscripts/ci/linux/setup.sh
 
     - name: Build
+      id: build
       env:
         GITHUB_EVENT_NAME: ${{ github.event_name }}
         CODE_COVERAGE: ${{ inputs.code_coverage }}
       run: |
+        set -o pipefail
         mkdir -p build.artifacts/env
 
         ENABLE_CODE_COVERAGE='false'
@@ -102,7 +104,33 @@ jobs:
           ENABLE_CODE_COVERAGE='false'
         fi
 
-        bash ./buildscripts/ci/linux/build_utest.sh -n ${{ env.BUILD_NUMBER }} --enable_code_coverage ${ENABLE_CODE_COVERAGE}
+        bash ./buildscripts/ci/linux/build_utest.sh -n ${{ env.BUILD_NUMBER }} --enable_code_coverage ${ENABLE_CODE_COVERAGE} 2>&1 | tee "$RUNNER_TEMP/utest-build.log"
+
+    # Logs on the runner are hosted on a separate storage domain that is not
+    # always accessible from the fork. Expose compiler diagnostics in check
+    # annotations while preserving the original build exit status above.
+    - name: Report build failures
+      if: failure() && steps.build.outcome == 'failure'
+      run: |
+        python3 - <<'PY'
+        import os
+        from pathlib import Path
+
+        log = Path(os.environ['RUNNER_TEMP']) / 'utest-build.log'
+        if not log.exists():
+            print('::error title=Unit test build failed::No build log was produced')
+        else:
+            lines = log.read_text(errors='replace').splitlines()
+            matches = [line for line in lines if any(token in line for token in
+                       ('error:', 'fatal error:', 'FAILED:', 'CMake Error', 'undefined reference'))]
+            with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                summary.write('### Unit test build diagnostics\n```text\n')
+                summary.write('\n'.join(matches[:60] or lines[-30:]))
+                summary.write('\n```\n')
+            for line in (matches[:10] or lines[-5:]):
+                message = line.strip()[:900].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+                print(f'::error title=Unit test build failed::{message}')
+        PY
 
     - name: Show ccache stats
       run: |
