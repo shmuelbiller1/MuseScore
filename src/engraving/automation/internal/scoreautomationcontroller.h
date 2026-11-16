@@ -147,6 +147,7 @@ private:
         EID eid = EID::invalid();
         int priority = 0;
         bool isCrescendo = false;
+        int authoredVelocityChange = 0; // 0 = infer the endpoint as before
         std::optional<real_t> nominalValueFrom;
         std::optional<real_t> nominalValueTo;
     };

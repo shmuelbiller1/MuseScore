@@ -79,5 +79,22 @@ FocusableItem {
             navigation.panel: root.navigationPanel
             navigation.row: snapBefore.navigation.row + 1
         }
+
+        SpinBoxPropertyView {
+            titleText: qsTrc("propertiespanel", "Dynamic change (0 = automatic)")
+            propertyItem: root.model ? root.model.velocityChange : null
+            minValue: 0
+            maxValue: 127
+            step: 1
+            decimals: 0
+            navigationName: "Dynamic change"
+            navigationPanel: root.navigationPanel
+            navigationRowStart: snapAfter.navigation.row + 1
+        }
+
+        StyledTextLabel {
+            width: parent.width
+            text: qsTrc("propertiespanel", "A nonzero change overrides a snapped ending dynamic during the span; 0 uses the ending dynamic, or a small automatic change if none is present. Adjust the span and listen to the instrument.")
+        }
     }
 }

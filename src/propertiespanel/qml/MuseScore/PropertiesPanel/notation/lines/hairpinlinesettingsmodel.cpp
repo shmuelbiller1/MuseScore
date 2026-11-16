@@ -61,12 +61,18 @@ PropertyItem* HairpinLineSettingsModel::snapAfter() const
     return m_snapAfter;
 }
 
+PropertyItem* HairpinLineSettingsModel::velocityChange() const
+{
+    return m_velocityChange;
+}
+
 void HairpinLineSettingsModel::createProperties()
 {
     TextLineSettingsModel::createProperties();
 
     m_snapBefore = buildPropertyItem(mu::engraving::Pid::SNAP_BEFORE);
     m_snapAfter = buildPropertyItem(mu::engraving::Pid::SNAP_AFTER);
+    m_velocityChange = buildPropertyItem(mu::engraving::Pid::VELO_CHANGE);
 
     isLineVisible()->setIsVisible(true);
     allowDiagonal()->setIsVisible(false);
@@ -79,6 +85,7 @@ void HairpinLineSettingsModel::loadProperties()
 
     loadPropertyItem(m_snapBefore);
     loadPropertyItem(m_snapAfter);
+    loadPropertyItem(m_velocityChange);
 }
 
 void HairpinLineSettingsModel::requestElements()

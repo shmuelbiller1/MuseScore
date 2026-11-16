@@ -21,6 +21,8 @@
  */
 #include "dynamicsettingsmodel.h"
 
+#include <algorithm>
+
 #include "translation.h"
 
 #include "types/texttypes.h"
@@ -89,9 +91,15 @@ QString DynamicsSettingsModel::playbackDetail() const
     if (!dynamic->playDynamic()) {
         return muse::qtrc("propertiespanel", "Playback disabled for this dynamic; printed text is visual only.");
     }
-    if (customDynamic() && dynamic->velocity() < 1) {
+    if (customDynamic()) {
+        if (dynamic->velocity() < 1) {
+            return muse::qtrc("propertiespanel",
+                              "Unrecognized dynamic wording is visual only until a velocity is set. Set 0 to clear the override.");
+        }
+        const double level = std::clamp(0.525 + (dynamic->velocity() - 80) * (0.05 / 16.0), 0.0, 1.0);
         return muse::qtrc("propertiespanel",
-                          "Unrecognized dynamic wording is visual only until a velocity is set. Set 0 to clear the override.");
+                          "Authored velocity %1 / 127; dynamic curve target %2%. Actual sound depends on the instrument.")
+               .arg(dynamic->velocity()).arg(QString::number(level * 100.0, 'f', 1));
     }
     // The nominal MIDI velocity is not an audio loudness measurement: the
     // instrument profile and subsequent hairpins affect what is heard.

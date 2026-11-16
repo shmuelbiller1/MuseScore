@@ -49,4 +49,16 @@ TEST_F(Engraving_HairpinTests, hairpin)
     hp2 = toHairpin(ScoreRW::writeReadElement(hp));
     EXPECT_EQ(hp2->hairpinType(), HairpinType::CRESC_HAIRPIN);
     delete hp2;
+
+    hp->setHairpinType(HairpinType::CRESC_LINE);
+    hp->setBeginText(u"Molto cresc.");
+    hp->setPropertyFlags(Pid::BEGIN_TEXT, PropertyFlags::NOSTYLE);
+    hp->setProperty(Pid::VELO_CHANGE, 32);
+    hp->setPropertyFlags(Pid::VELO_CHANGE, PropertyFlags::NOSTYLE);
+    hp2 = toHairpin(ScoreRW::writeReadElement(hp));
+    ASSERT_TRUE(hp2);
+    EXPECT_EQ(hp2->hairpinType(), HairpinType::CRESC_LINE);
+    EXPECT_EQ(hp2->beginText(), u"Molto cresc.");
+    EXPECT_EQ(hp2->veloChange(), 32);
+    delete hp2;
 }

@@ -57,8 +57,8 @@ A working musician-facing search/interpretation backlog for European concert and
 
 | Wording / variants | Meaning and classification | Current interpretation |
 | --- | --- | --- |
-| Poco, un poco, pochissimo (It.) | Little / a little / very little; modifies another instruction | V alone; `Poco rit.` N editable 90% arrival |
-| Molto, di molto, assai (It.) | Much / by much / very; different grammatical scope | `Di molto` and `Con molto` expression cells V alone; `Molto rit.` N editable 60% arrival |
+| Poco, un poco, pochissimo (It.) | Little / a little / very little; modifies another instruction | V alone; `Poco rit.` and `Poco accel.` N editable tempo arrivals, `Poco cresc.` / `Poco dim.` N editable dynamic spans |
+| Molto, di molto, assai (It.) | Much / by much / very; different grammatical scope | `Di molto` and `Con molto` V alone; `Molto rit.` / `Molto accel.` N tempo spans, `Molto cresc.` / `Molto dim.` N dynamic spans; all values editable |
 | Non troppo, ma non troppo (It.) | Not too much; caps another instruction | V; never multiply BPM blindly |
 | Sempre (It.) | Continue same instruction until changed | V; needs scope |
 | Più, meno (It.) | More / less; what property? | V alone |
@@ -93,8 +93,8 @@ A working musician-facing search/interpretation backlog for European concert and
 | Sforzando / sfz / sf (It.) | Sudden strong emphasis | T existing dynamic, profile-dependent |
 | Sforzato / sffz / rfz / rinforzando (It.) | Reinforced accent variants; not always identical | T variants where listed in `palettecreator.cpp`; verify each |
 | Forte-piano / fp; sforzando-piano / sfp | Strong attack immediately softer | T some dynamic transitions; check automation timing |
-| Crescendo / cresc. (It.) | Gradually louder | T hairpin/line; configure length/end level |
-| Decrescendo / decresc.; diminuendo / dim. (It.) | Gradually softer; differing connotations | T hairpin/line, P for expressive shading |
+| Crescendo / cresc. (It.) | Gradually louder | T hairpin/line; N `Poco cresc.` / `Molto cresc.` qualified lines with editable span and dynamic change |
+| Decrescendo / decresc.; diminuendo / dim. (It.) | Gradually softer; differing connotations | T hairpin/line; N `Poco dim.` / `Molto dim.` qualified lines with editable span and dynamic change; P expressive shading |
 | Subito piano / subito forte / sub. p / sub. f | Immediate softer/louder | Explicit T dynamic; `subito` itself not a sound event |
 | Staccato, staccatissimo (It.) | Detached / very detached, not necessarily accented | T articulations; note-duration profiles vary |
 | Tenuto (It.) | Hold full duration / gentle emphasis depending context | T articulation, instrument-dependent |

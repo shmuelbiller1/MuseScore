@@ -23,6 +23,7 @@
 #include "scoreautomationcontroller.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <iterator>
 #include <unordered_map>
 #include <unordered_set>
@@ -937,6 +938,7 @@ void ScoreAutomationController::addHairpinPoints(const Hairpin* hairpin, int tic
 
     info.priority = dynamicPriority(hairpin);
     info.isCrescendo = hairpin->isCrescendo();
+    info.authoredVelocityChange = std::abs(std::clamp(hairpin->veloChange(), -127, 127));
     info.nominalValueFrom = startHairpinValue(hairpin);
     info.nominalValueTo = endHairpinValue(hairpin);
 
@@ -973,9 +975,14 @@ void ScoreAutomationController::addHairpinPoints(const HairpinInfo& info, const 
                                        : info.nominalValueTo.value() < valueFrom);
 
     // --- Check end tick
-    const real_t valueTo = useNominalValueTo
-                           ? info.nominalValueTo.value()
-                           : valueFrom + (info.isCrescendo ? DYNAMIC_STEP : -DYNAMIC_STEP);
+    // A nonzero, explicitly authored velocity change takes precedence over a
+    // snapped end dynamic, as it does in legacy MIDI. Zero retains the existing
+    // inferred-target behavior. Clamp before constructing MPE points.
+    const real_t step = info.authoredVelocityChange > 0
+                        ? real_t::make(info.authoredVelocityChange * (0.05 / 16.0)) : DYNAMIC_STEP;
+    const real_t target = info.authoredVelocityChange == 0 && useNominalValueTo
+                          ? info.nominalValueTo.value() : valueFrom + (info.isCrescendo ? step : -step);
+    const real_t valueTo = real_t::make(std::clamp(target.raw(), 0.0, 1.0));
 
     const auto endPointIt = curve.find(info.to);
     const bool hasPointAtEnd = endPointIt != curve.end();
