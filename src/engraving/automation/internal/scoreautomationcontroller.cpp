@@ -152,6 +152,23 @@ static std::optional<real_t> dynamicValue(DynamicType type, bool startValue)
     return std::nullopt;
 }
 
+static std::optional<real_t> authoredDynamicValue(const Dynamic* dynamic)
+{
+    if (!dynamic || !dynamic->playDynamic()) {
+        return std::nullopt;
+    }
+    if (dynamic->dynamicType() != DynamicType::OTHER) {
+        return dynamicValue(dynamic->dynamicType(), true);
+    }
+    // Custom wording cannot be used as a hairpin target without an explicitly
+    // chosen velocity. Match the ordinary automation point's calibration.
+    if (dynamic->velocity() < 1) {
+        return std::nullopt;
+    }
+    const double level = 0.525 + (dynamic->velocity() - 80) * (0.05 / 16.0);
+    return real_t::make(std::clamp(level, 0.0, 1.0));
+}
+
 static std::optional<real_t> startHairpinValue(const Hairpin* hairpin)
 {
     const DynamicType type = hairpin->dynamicTypeFrom();
@@ -162,33 +179,35 @@ static std::optional<real_t> startHairpinValue(const Hairpin* hairpin)
     return dynamicValue(type, false);
 }
 
-static DynamicType findEndDynamicType(const Hairpin* hairpin)
+static std::optional<real_t> endHairpinValue(const Hairpin* hairpin)
 {
     const DynamicType textType = hairpin->dynamicTypeTo();
     if (textType != DynamicType::OTHER) {
-        return textType;
+        return dynamicValue(textType, true);
     }
 
     if (hairpin->spannerSegments().empty()) {
         const Segment* endSegment = hairpin->endSegment();
         if (!endSegment) {
-            return DynamicType::OTHER;
+            return std::nullopt;
         }
 
         const track_idx_t trackIdx = hairpin->track();
         const std::vector<EngravingItem*> dynamics = endSegment->findAnnotations(ElementType::DYNAMIC, trackIdx, trackIdx);
         for (const EngravingItem* item : dynamics) {
-            if (item && item->isDynamic() && toDynamic(item)->playDynamic()) {
-                return toDynamic(item)->dynamicType();
+            if (item && item->isDynamic()) {
+                if (const auto value = authoredDynamicValue(toDynamic(item))) {
+                    return value;
+                }
             }
         }
 
-        return DynamicType::OTHER;
+        return std::nullopt;
     }
 
     const LineSegment* seg = hairpin->backSegment();
     if (!seg) {
-        return DynamicType::OTHER;
+        return std::nullopt;
     }
 
     // Optimization: first check if there is a cached dynamic
@@ -196,21 +215,11 @@ static DynamicType findEndDynamicType(const Hairpin* hairpin)
     if (!snappedItem || !snappedItem->isDynamic() || !toDynamic(snappedItem)->playDynamic()) {
         snappedItem = toHairpinSegment(seg)->findElementToSnapAfter(false /*ignoreInvisible*/, true /*requirePlayable*/);
         if (!snappedItem || !snappedItem->isDynamic() || !toDynamic(snappedItem)->playDynamic()) {
-            return DynamicType::OTHER;
+            return std::nullopt;
         }
     }
 
-    return toDynamic(snappedItem)->dynamicType();
-}
-
-static std::optional<real_t> endHairpinValue(const Hairpin* hairpin)
-{
-    const DynamicType type = findEndDynamicType(hairpin);
-    if (type == DynamicType::OTHER) {
-        return std::nullopt;
-    }
-
-    return dynamicValue(type, true);
+    return authoredDynamicValue(toDynamic(snappedItem));
 }
 
 static int dynamicPriority(const EngravingItem* item)
@@ -758,11 +767,11 @@ void ScoreAutomationController::addDynamicPoints(const Dynamic* dynamic, int tic
         // An explicitly assigned MIDI velocity makes it an authored dynamic.
         // The MPE curve's ordinary levels use approximately five percent per
         // sixteen velocity units (mp=64 -> 0.475, mf=80 -> 0.525).
-        if (dynamic->velocity() < 1) {
+        const std::optional<real_t> level = authoredDynamicValue(dynamic);
+        if (!level) {
             return;
         }
-        const double level = 0.525 + (dynamic->velocity() - 80) * (0.05 / 16.0);
-        info.kind = DynamicInfo::Ordinary { real_t::make(std::clamp(level, 0.0, 1.0)) };
+        info.kind = DynamicInfo::Ordinary { *level };
     } else if (auto ordinaryIt = ORDINARY_DYNAMIC_VALUES.find(dynamicType); ordinaryIt != ORDINARY_DYNAMIC_VALUES.end()) {
         info.kind = DynamicInfo::Ordinary { ordinaryIt->second };
     } else if (auto singleNoteIt = SINGLE_NOTE_DYNAMIC_VALUES.find(dynamicType); singleNoteIt != SINGLE_NOTE_DYNAMIC_VALUES.end()) {

@@ -140,6 +140,27 @@ TEST_F(ScoreAutomationController_Tests, CustomDynamicRequiresAuthoredVelocity)
     EXPECT_EQ(controller.automationData()->curve(key).count(960), 0u);
 }
 
+TEST_F(ScoreAutomationController_Tests, CustomDynamicCanBeHairpinTarget)
+{
+    std::unique_ptr<MasterScore> score(ScoreRW::readScore(AUTOMATION_DATA_DIR + u"dynamics.mscx"));
+    ASSERT_TRUE(score);
+    Segment* segment = score->tick2segment(Fraction::fromTicks(5760), false, SegmentType::ChordRest);
+    ASSERT_TRUE(segment);
+    Dynamic* ending = toDynamic(segment->findAnnotation(ElementType::DYNAMIC, 0, 0));
+    ASSERT_TRUE(ending);
+    ending->setDynamicType(u"Con forza");
+    ending->setVelocity(112); // same level as the original ff target
+
+    ScoreAutomationController controller;
+    controller.init(score.get());
+    const AutomationCurveKey key = AutomationCurveKey::staff(AutomationType::Dynamics, score->staff(0)->id());
+    const AutomationCurve& curve = controller.automationData()->curve(key);
+    const auto end = curve.find(5760);
+    ASSERT_NE(end, curve.end());
+    EXPECT_NEAR(resolveInValue(curve, end).raw(), FF_VALUE, 0.000001);
+    EXPECT_NEAR(end->second.value.outValue.raw(), FF_VALUE, 0.000001);
+}
+
 TEST_F(ScoreAutomationController_Tests, Init_Dynamics_CurveMatchesExpected)
 {
     // [WHEN] Calculate the dynamics curve
