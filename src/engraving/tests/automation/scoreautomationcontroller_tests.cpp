@@ -127,18 +127,18 @@ TEST_F(ScoreAutomationController_Tests, CustomDynamicRequiresAuthoredVelocity)
     const AutomationCurveKey key = AutomationCurveKey::staff(AutomationType::Dynamics, score->staff(0)->id());
     ScoreAutomationController controller;
     controller.init(score.get());
-    EXPECT_EQ(controller.automationData()->curve(key).count(960), 0u);
+    EXPECT_FALSE(controller.automationData()->curve(key).contains(960));
 
     expression->setVelocity(96);
     controller.init(score.get());
     const AutomationCurve& curve = controller.automationData()->curve(key);
-    ASSERT_EQ(curve.count(960), 1u);
+    ASSERT_TRUE(curve.contains(960));
     EXPECT_NEAR(curve.at(960).value.outValue.raw(), F_VALUE, 0.000001);
-    EXPECT_EQ(curve.count(1440), 1u); // following mp still takes effect
+    EXPECT_TRUE(curve.contains(1440)); // following mp still takes effect
 
     expression->setPlayDynamic(false);
     controller.init(score.get());
-    EXPECT_EQ(controller.automationData()->curve(key).count(960), 0u);
+    EXPECT_FALSE(controller.automationData()->curve(key).contains(960));
 }
 
 TEST_F(ScoreAutomationController_Tests, CustomDynamicCanBeHairpinTarget)

@@ -144,11 +144,11 @@ jobs:
     # Preserve failed suite names and assertions as check annotations even if
     # GitHub's compressed runner logs cannot be downloaded by this fork.
     - name: Report failing tests
-      if: failure()
+      if: failure() && steps.build.outcome == 'success'
       run: python3 tools/historical_performance/report_ci_test_failures.py build.debug
 
     - name: Isolate MIDI test abort
-      if: failure()
+      if: failure() && steps.build.outcome == 'success'
       run: |
         if grep -q ':iex_midi_tests$' build.debug/Testing/Temporary/LastTestsFailed.log; then
           cd build.debug
