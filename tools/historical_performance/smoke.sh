@@ -16,7 +16,10 @@ python3 docs/historical-performance/test-scores/expand_native_to_18.py \
     src/engraving/tests/automation/data/tempo_relative.mscx "$tmp_dir/18-parts.mscx"
 # The checked-in native regression must be exactly the generator output.
 cmp "$tmp_dir/18-parts.mscx" src/engraving/tests/automation/data/tempo_relative_18_parts.mscx
-python3 - "$tmp_dir/18-parts.musicxml" "$tmp_dir/18-parts.mscx" <<'PY'
+python3 docs/historical-performance/test-scores/expand_expressive_to_18.py \
+    src/engraving/tests/automation/data/tempo_relative.mscx "$tmp_dir/18-expressive.mscx"
+cmp "$tmp_dir/18-expressive.mscx" src/engraving/tests/automation/data/tempo_relative_18_expressive.mscx
+python3 - "$tmp_dir/18-parts.musicxml" "$tmp_dir/18-parts.mscx" "$tmp_dir/18-expressive.mscx" <<'PY'
 from pathlib import Path
 import sys
 from xml.etree import ElementTree as ET
@@ -45,6 +48,23 @@ for index, staff in enumerate(native.findall('Staff')):
     assert all((m.find('eid') is not None) == (index == 0) for m in measures)
     assert (measures[-1].find('endRepeat') is not None) == (index == 0)
     assert all(len(m.findall('./voice/Chord/Note')) == 1 for m in measures)
-print('XML fixture checks: one relative marking, one eased ramp, 18 distinct six-measure native parts')
+expressive = ET.parse(Path(sys.argv[3])).getroot().find('Score')
+from importlib.util import spec_from_file_location, module_from_spec
+sys.path.insert(0, 'docs/historical-performance/test-scores')
+spec = spec_from_file_location('expressive', 'docs/historical-performance/test-scores/expand_expressive_to_18.py')
+module = module_from_spec(spec)
+spec.loader.exec_module(module)
+staves = expressive.findall('Staff')
+assert len(staves) == len(module.RHYTHMS) == 18
+assert len(set(module.RHYTHMS)) == 18
+for index, staff in enumerate(staves):
+    for measure in staff.findall('Measure'):
+        chords = measure.findall('./voice/Chord')
+        assert len(chords) == len(module.RHYTHMS[index])
+        assert sum({'eighth': 1, 'quarter': 2, 'half': 4, 'whole': 8}[c.findtext('durationType')] for c in chords) == 8
+        assert all(c.find('./Articulation/subtype') is not None for c in chords)
+    assert len(staff.findall('./Measure/voice/Dynamic')) == 1
+assert len({element.text for element in expressive.iter('eid')}) == len(list(expressive.iter('eid')))
+print('XML fixture checks: relative tempo, 18 independent rhythms/dynamics/articulations and shared timing')
 PY
 git diff --check

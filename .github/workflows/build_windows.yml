@@ -309,10 +309,8 @@ jobs:
 
 
   windows_portable:
-    # Disable on pull_request
-    if: |
-      github.event_name != 'pull_request' &&
-      (inputs.platforms == '' || contains(inputs.platforms, 'windows_portable'))
+    # Build and validate the extract-and-run package on PRs as well as releases.
+    if: inputs.platforms == '' || contains(inputs.platforms, 'windows_portable')
     runs-on: windows-2025
     steps:
     - name: Clone repository
@@ -455,6 +453,9 @@ jobs:
         WIN_SIGN_S3_KEY: ${{ secrets.WIN_SIGN_S3_KEY }}
       run: |
         buildscripts\ci\windows\package.bat --portable ON --signsecret "%WIN_SIGN_S3_SECRET%" --signkey "%WIN_SIGN_S3_KEY%"
+    - name: Verify offline portable ZIP and launcher
+      shell: pwsh
+      run: ./buildscripts/ci/windows/verify_portable.ps1
     - name: Checksum
       run: |
         bash ./muse/buildscripts/ci/tools/checksum.sh

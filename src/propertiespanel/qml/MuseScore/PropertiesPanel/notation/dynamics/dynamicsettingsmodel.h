@@ -35,6 +35,7 @@ class DynamicsSettingsModel : public ModelWithVoiceAndPositionOptions
     Q_PROPERTY(PropertyItem * avoidBarLines READ avoidBarLines CONSTANT)
     Q_PROPERTY(PropertyItem * dynamicScale READ dynamicScale CONSTANT)
     Q_PROPERTY(PropertyItem * centerOnNotehead READ centerOnNotehead CONSTANT)
+    Q_PROPERTY(QString playbackDetail READ playbackDetail NOTIFY playbackDetailChanged)
 
     // Frame-related settings
     Q_PROPERTY(mu::propertiespanel::PropertyItem * frameType READ frameType CONSTANT)
@@ -54,6 +55,7 @@ public:
     PropertyItem* avoidBarLines() const;
     PropertyItem* dynamicScale() const;
     PropertyItem* centerOnNotehead() const;
+    QString playbackDetail() const;
 
     PropertyItem* frameType() const;
     PropertyItem* frameBorderColor() const;
@@ -61,6 +63,9 @@ public:
     PropertyItem* frameThickness() const;
     PropertyItem* frameMargin() const;
     PropertyItem* frameCornerRadius() const;
+
+signals:
+    void playbackDetailChanged();
 
 private:
     void updateFramePropertiesAvailability();

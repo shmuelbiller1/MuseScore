@@ -24,6 +24,7 @@
 #include "translation.h"
 
 #include "types/texttypes.h"
+#include "engraving/dom/dynamic.h"
 
 using namespace mu::propertiespanel;
 using namespace mu::engraving;
@@ -67,6 +68,22 @@ void DynamicsSettingsModel::createProperties()
 void DynamicsSettingsModel::requestElements()
 {
     m_elementList = m_repository->findElementsByType(ElementType::DYNAMIC);
+    emit playbackDetailChanged();
+}
+
+QString DynamicsSettingsModel::playbackDetail() const
+{
+    if (m_elementList.size() != 1) {
+        return muse::qtrc("propertiespanel", "Select one dynamic to inspect playback.");
+    }
+    const Dynamic* dynamic = toDynamic(m_elementList.front());
+    if (!dynamic->playDynamic()) {
+        return muse::qtrc("propertiespanel", "Playback disabled for this dynamic; printed text is visual only.");
+    }
+    // The nominal MIDI velocity is not an audio loudness measurement: the
+    // instrument profile and subsequent hairpins affect what is heard.
+    return muse::qtrc("propertiespanel", "Playback on; nominal MIDI velocity: %1 / 127. Instrument sound and hairpins may differ.")
+           .arg(dynamic->velocity());
 }
 
 void DynamicsSettingsModel::loadProperties()
@@ -87,6 +104,7 @@ void DynamicsSettingsModel::loadProperties()
     loadPropertyItem(m_frameCornerRadius, formatDoubleFunc);
 
     updateFramePropertiesAvailability();
+    emit playbackDetailChanged();
 }
 
 PropertyItem* DynamicsSettingsModel::avoidBarLines() const

@@ -77,6 +77,13 @@ Column {
         propertyItem: root.model ? root.model.avoidBarLines : null
     }
 
+    StyledTextLabel {
+        width: parent.width
+        visible: root.model ? !root.model.isEmpty : false
+        text: root.model ? root.model.playbackDetail : ""
+        horizontalAlignment: Text.AlignLeft
+    }
+
     VoicesAndPositionSection {
         id: voicesAndPositionSection
 
