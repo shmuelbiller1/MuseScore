@@ -186,6 +186,27 @@ TEST_F(Engraving_TempoTimelineTests, FLAT_EASED_RAMP_AFTER_EXPLICIT_TEMPO)
     }
 }
 
+TEST_F(Engraving_TempoTimelineTests, IMMEDIATE_TEMPO_AT_EASED_RAMP_START)
+{
+    // An immediate meno mosso at the start of a ritardando must jump at 1920,
+    // then ease from that new value over exactly 1920 ticks (not from tick 0).
+    AutomationPoint start = flatTempo(162.0);
+    start.value.inValue = AutomationPoint::ExplicitArrival {
+        normalizeTempo(BeatsPerSecond::fromBPM(180.0)), AutomationEase::none()
+    };
+    AutomationCurve curve {
+        { 0, flatTempo(180.0) },
+        { 1920, start },
+        { 3840, rampArrival(81.0, 81.0, AutomationEase { muse::real_t::make(0.5), muse::real_t::make(0.25) }) },
+    };
+    TempoTimeline timeline;
+    timeline.rebuild(curve, {});
+    EXPECT_NEAR(timeline.tempo(960).toBPM().val, 180.0, TEMPO_ERROR);
+    EXPECT_NEAR(timeline.tempo(1920).toBPM().val, 162.0, TEMPO_ERROR);
+    EXPECT_NEAR(timeline.tempo(2880).toBPM().val, 141.75, TEMPO_ERROR);
+    EXPECT_NEAR(timeline.tempo(3840).toBPM().val, 81.0, TEMPO_ERROR);
+}
+
 /**
  * @brief Engraving_TempoTimelineTests_GRADUAL_TEMPO_CHANGE_RAMP_AND_OVERRIDE
  * @details A ritardando ramps from 120 BPM to 90 BPM across ticks 0-3840 (factor 0.75, per

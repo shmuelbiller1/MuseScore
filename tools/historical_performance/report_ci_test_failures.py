@@ -4,6 +4,7 @@
 """Surface CTest failures as GitHub annotations when runner logs are inaccessible."""
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -30,12 +31,24 @@ def report(build_dir: Path) -> None:
     for suite in suites:
         annotate("Failed CTest suite", suite)
 
-    # CTest's verbose log preserves GoogleTest assertion messages. Avoid
-    # recursively parsing every XML file in the build tree: many are not test
-    # results, and malformed/unrelated XML can break the diagnostic step.
-    markers = ("[  FAILED  ]", "Failure", "CMake Error", "AddressSanitizer", "Segmentation fault")
-    diagnostic_lines = [line for line in details.splitlines() if any(marker in line for marker in markers)]
-    for line in diagnostic_lines[:30]:
+    # CTest's verbose log preserves assertion context (including expected and
+    # actual values). GoogleTest names can contain "Failure" even on a passing
+    # [ RUN ]/[ OK ] line; match actual failure records, not that substring.
+    ansi = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+    lines = [ansi.sub("", line) for line in details.splitlines()]
+    diagnostic_lines = []
+    markers = ("[  FAILED  ]", "CMake Error", "AddressSanitizer", "Segmentation fault",
+               "Subprocess aborted", "terminate called", "core dumped", "SIGABRT")
+    for index, line in enumerate(lines):
+        if "[ RUN " in line or "[       OK ]" in line:
+            continue
+        if line.rstrip().endswith(": Failure"):
+            # Include the next few lines with the values printed by EXPECT_NEAR.
+            context = " ".join(part.strip() for part in lines[index:index + 7] if part.strip())
+            diagnostic_lines.append(context)
+        elif any(marker in line for marker in markers):
+            diagnostic_lines.append(line)
+    for line in diagnostic_lines[:20]:
         annotate("Unit-test detail", line)
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")

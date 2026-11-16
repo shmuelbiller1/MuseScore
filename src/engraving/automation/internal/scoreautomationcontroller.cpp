@@ -23,6 +23,7 @@
 #include "scoreautomationcontroller.h"
 
 #include <algorithm>
+#include <iterator>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -1244,6 +1245,19 @@ void ScoreAutomationController::addGradualTempoChangePoints(const GradualTempoCh
         startPoint.generated = true;
         ctx.tempoCurve->emplace_hint(tickFromIt, tickFrom, startPoint);
         setNoRepeatTempoPoint(tickFrom - tickOffset, startPoint, ctx);
+    } else if (!std::holds_alternative<AutomationPoint::ExplicitArrival>(tickFromIt->second.value.inValue)) {
+        // A tempo text at the same tick is an immediate change, not the arrival
+        // of a ramp from the previous marking. Preserve that jump while making
+        // its departure the anchor for this ramp's interpolation. Otherwise the
+        // sampler starts at an older tempo and bends over the wrong tick range.
+        const real_t before = tickFromIt == ctx.tempoCurve->begin()
+                              ? DEFAULT_NORMALIZED_TEMPO : std::prev(tickFromIt)->second.value.outValue;
+        const AutomationPoint::ExplicitArrival flatArrival { before, AutomationPoint::Ease::none() };
+        tickFromIt->second.value.inValue = flatArrival;
+        const auto rawIt = ctx.noRepeatTempoCurve.find(tickFrom - tickOffset);
+        if (rawIt != ctx.noRepeatTempoCurve.end()) {
+            rawIt->second.value.inValue = flatArrival;
+        }
     }
 
     const real_t normalizedTarget = std::clamp(normalizedCurrent * tempoChange->tempoChangeFactor(),
