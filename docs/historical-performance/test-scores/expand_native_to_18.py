@@ -73,6 +73,14 @@ def expand(source: Path, destination: Path) -> None:
         s.set("id", str(index + 1))
         for measure_number, measure in enumerate(s.findall("Measure")):
             if index != 0:
+                # Measures are one shared object across staves, not per-staff
+                # objects. Only staff 1 may serialize their EID and repeat
+                # metadata; setting another EID on the same Measure asserts in
+                # EIDRegister::registerItemEID during a native score load.
+                for tag in ("eid", "startRepeat", "endRepeat"):
+                    element = measure.find(tag)
+                    if element is not None:
+                        measure.remove(element)
                 voice = measure.find("voice")
                 if voice is None:
                     raise ValueError("Missing voice")

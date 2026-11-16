@@ -39,9 +39,12 @@ assert len(native.findall('./SpannerMap/GradualTempoChange')) == 1
 assert len(native.findall('.//Fermata')) == 1
 ids = [element.text for element in native.iter('eid')]
 assert len(ids) == len(set(ids))
-for staff in native.findall('Staff'):
-    assert len(staff.findall('Measure')) == 6
-    assert all(len(m.findall('./voice/Chord/Note')) == 1 for m in staff.findall('Measure'))
+for index, staff in enumerate(native.findall('Staff')):
+    measures = staff.findall('Measure')
+    assert len(measures) == 6
+    assert all((m.find('eid') is not None) == (index == 0) for m in measures)
+    assert (measures[-1].find('endRepeat') is not None) == (index == 0)
+    assert all(len(m.findall('./voice/Chord/Note')) == 1 for m in measures)
 print('XML fixture checks: one relative marking, one eased ramp, 18 distinct six-measure native parts')
 PY
 git diff --check
