@@ -128,7 +128,9 @@ QString TempoSettingsModel::upcomingTempo() const
         return QStringLiteral("—");
     }
     const mu::engraving::TempoText* marking = mu::engraving::toTempoText(m_elementList.front());
-    const mu::engraving::TempoTimeline& timeline = marking->score()->tempoTimeline();
+    // The marking's tick is a raw score tick. Keep the timeline in the same
+    // coordinate system even when the playback repeat list is expanded.
+    const mu::engraving::TempoTimeline& timeline = marking->score()->tempoTimeline(/*expandRepeats*/ false);
     const int tick = marking->tick().ticks();
     const double currentBpm = timeline.tempo(tick).toBPM().val * timeline.tempoMultiplier().val;
     for (const mu::engraving::TempoTimePoint& point : timeline.points()) {

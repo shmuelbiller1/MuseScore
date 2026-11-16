@@ -28,8 +28,8 @@ if (Test-Path $probe) { Remove-Item $probe -Recurse -Force }
 Expand-Archive -LiteralPath $zip -DestinationPath $probe
 $launcher = Join-Path $probe 'MuseScorePortable.exe'
 $exe = Join-Path $probe 'App\MuseScore\bin\MuseScoreStudio5.exe'
-$font = Join-Path $probe 'App\MuseScore\MS Basic.sf3'
-$license = Join-Path $probe 'App\MuseScore\MS Basic_License.md'
+$font = Join-Path $probe 'App\MuseScore\sound\MS Basic.sf3'
+$license = Join-Path $probe 'App\MuseScore\sound\MS Basic_License.md'
 $qt = Join-Path $probe 'App\MuseScore\bin\Qt6Core.dll'
 foreach ($required in @($launcher, $exe, $font, $license, $qt)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing offline dependency: $required" }
@@ -72,6 +72,8 @@ try {
         $offset += 8 + $size + ($size % 2)
     }
     if (-not $dataFound) { throw 'The WAV has no audio data chunk.' }
+    & python3 (Join-Path $root 'tools\historical_performance\verify_wav.py') $wav
+    if ($LASTEXITCODE -ne 0) { throw 'The bundled soundfont produced no verifiable audible samples.' }
     "Offline first-launch audio export succeeded using bundled MS Basic: $wav ($($bytes.Length) bytes)" |
         Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
     "Extract-and-run package: $zip" | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
