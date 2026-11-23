@@ -223,8 +223,28 @@
         return score.tracks.flatMap((track, index) => track.notes.length ? [index] : []);
     }
 
+    // Arrangement is explicit: unison repeats a *written melody* with different
+    // timbres; it never invents SATB harmony or silently transposes bass notes.
+    function arrangeParts(mode, score, parts, recording, melodyTrack, soloVoice = 0) {
+        if (!score || !Array.isArray(parts) || parts.length !== 4) throw Error('Set up four voice characters');
+        if (mode === 'choir') {
+            const tracks = parts.map(part => part.track);
+            if (tracks.some(track => !score.tracks[track]?.notes.length) || new Set(tracks).size !== 4) {
+                throw Error('Four-part harmony requires four different written-note tracks; arrange the other parts in the score first.');
+            }
+            return parts.map(part => ({ ...part }));
+        }
+        if (!score.tracks[melodyTrack]?.notes.length) throw Error('Choose a written melody track for solo or unison');
+        if (mode === 'solo') {
+            if (!Number.isInteger(soloVoice) || soloVoice < 0 || soloVoice >= 4) throw Error('Choose a solo voice character');
+            return [{ ...parts[soloVoice], track: melodyTrack, recording, mute: false, solo: false }];
+        }
+        if (mode === 'unison') return parts.map(part => ({ ...part, track: melodyTrack, recording }));
+        throw Error('Choose solo, four-part choir, or unison layers');
+    }
+
     function* renderSteps(score, parts, recordings, rate, maxSeconds = 240) {
-        if (!score || !Array.isArray(parts) || parts.length !== 4) throw Error('Map four independent MIDI tracks');
+        if (!score || !Array.isArray(parts) || parts.length < 1 || parts.length > 4) throw Error('Map one to four voice layers');
         if (!Number.isFinite(rate) || rate < 8000 || rate > 96000) throw Error('Unsupported output sample rate');
         if (!Number.isFinite(maxSeconds) || maxSeconds <= 0) throw Error('Invalid render length limit');
         const selected = parts.filter(p => p && !p.mute && (!parts.some(x => x && x.solo) || p.solo));
@@ -309,5 +329,5 @@
         for (let i = 0; i < frames; ++i) for (const ch of channels) { view.setInt16(at, Math.round(clamp(ch[i] || 0, -1, 1) * 32767), true); at += 2; }
         return output;
     }
-    return { parseMidi, noteTrackIndices, estimatePitch, vowelNote, shape, render, renderAsync, wav, defaults, hz };
+    return { parseMidi, noteTrackIndices, arrangeParts, estimatePitch, vowelNote, shape, render, renderAsync, wav, defaults, hz };
 });

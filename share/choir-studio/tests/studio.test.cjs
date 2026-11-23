@@ -24,8 +24,14 @@ function page(mimeType = 'audio/webm') {
     }
     const document = {
         getElementById: id => { if (!nodes.has(id)) nodes.set(id, new Element(id)); return nodes.get(id); },
-        createElement: tag => new Element(tag)
+        createElement: tag => new Element(tag),
+        querySelectorAll: selector => {
+            const field = selector.match(/^#parts select\[data-field="(track|recording)"\]$/)?.[1];
+            assert.ok(field, `unexpected selector: ${selector}`);
+            return nodes.get('parts').children.map(card => findByField(card, field));
+        }
     };
+    document.getElementById('arrangementMode').value = 'solo';
     const source = Float32Array.from({ length: 24000 }, (_, i) => 0.2 * Math.sin(2 * Math.PI * 220 * i / 24000));
     class AudioContext {
         constructor(config) { assert.equal(config.sampleRate, 24000); }
@@ -67,6 +73,16 @@ function page(mimeType = 'audio/webm') {
         get releasePermission() { return releasePermission; } };
 }
 
+function onePartMidi() {
+    const bytes = midi();
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const firstNote = 14 + 8 + view.getUint32(18);
+    const end = firstNote + 8 + view.getUint32(firstNote + 4);
+    const reduced = bytes.slice(0, end);
+    reduced[10] = 0; reduced[11] = 2; // conductor + one written part
+    return reduced;
+}
+
 function findByField(root, field) {
     if (root.dataset?.field === field) return root;
     for (const node of root.children || []) {
@@ -85,10 +101,47 @@ test('loading conductor MIDI selects four distinct note tracks and can render im
     Object.assign(wav, { name: 'vowel.wav' });
     await ui.$('wav').onchange({ target: { files: [wav] } });
     assert.equal(ui.$('sources').textContent.includes('vowel.wav'), true);
-    // Every part uses the imported recording, but follows a different score track.
+    // Default solo follows one selected score track and source.
+    assert.equal(ui.$('melodyTrack').value, '1');
     await ui.$('render').onclick();
     assert.equal(ui.$('listen').disabled, false);
     assert.equal(ui.$('warning').textContent.includes('Choose four different'), false);
+});
+
+test('solo renders a MIDI with only one written part; SATB refuses to invent the rest', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => onePartMidi() }] } });
+    assert.equal(ui.$('melodyTrack').options.length, 1);
+    assert.equal(ui.$('melodyTrack').value, '1');
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'solo.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+    ui.$('arrangementMode').value = 'choir';
+    await ui.$('render').onclick();
+    assert.match(ui.$('warning').textContent, /four different written-note tracks/);
+});
+
+test('solo/choir/unison picker switches track editing and rejects duplicate SATB mapping', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'voice.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    const mode = ui.$('arrangementMode');
+    assert.equal(findByField(ui.$('parts').children[0], 'track').disabled, true);
+    mode.value = 'choir'; mode.onchange();
+    assert.equal(findByField(ui.$('parts').children[0], 'track').disabled, false);
+    const bassCard = ui.$('parts').children[3];
+    const bassTrack = findByField(bassCard, 'track'); bassTrack.value = '1';
+    bassCard.onchange({ target: bassTrack });
+    await ui.$('render').onclick();
+    assert.match(ui.$('warning').textContent, /four different written-note tracks/);
+    mode.value = 'unison'; mode.onchange();
+    assert.match(ui.$('modeInfo').textContent, /not SATB harmony/);
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false);
 });
 
 test('four imported source files map one-to-one in picker order', async () => {
@@ -102,6 +155,11 @@ test('four imported source files map one-to-one in picker order', async () => {
     const sources = ui.$('parts').children.map(card => Number(findByField(card, 'recording').value));
     assert.deepEqual(sources, [0, 1, 2, 3]);
     assert.ok(ui.$('status').textContent.includes('Check each part'));
+    ui.$('commonSource').value = '2';
+    ui.$('assignAll').onclick();
+    assert.deepEqual(ui.$('parts').children.map(card => Number(findByField(card, 'recording').value)),
+        [2, 2, 2, 2]);
+    assert.match(ui.$('status').textContent, /all four voice characters/);
 });
 test('switching timbre preset retains selected label and changes tone, not MIDI track', async () => {
     const ui = page();

@@ -23,7 +23,9 @@
         // buffer is separate from the user's original Blob.
         const saved = blob;
         const index = recordings.push({ name, samples, blob: saved, url: URL.createObjectURL(saved) }) - 1;
-        const choice = document.createElement('option'); choice.value = String(index); choice.textContent = name; $('originalChoice').append(choice);
+        for (const selector of ['originalChoice', 'commonSource']) {
+            const choice = document.createElement('option'); choice.value = String(index); choice.textContent = name; $(selector).append(choice);
+        }
         $('sources').textContent = recordings.map((r, i) => `${i + 1}. ${r.name} (${(r.samples.length / rate).toFixed(1)} s)`).join(' · ');
         refresh(); status('Source ready. Select a voiced vowel region; pitch detection can be overridden in Hz.');
     }
@@ -106,9 +108,12 @@
             const available = Studio.noteTrackIndices(score);
             // A tempo-only conductor track must not duplicate Soprano/Alto.
             assignments.forEach((part, i) => { part.track = available[i] ?? -1; });
-            $('scoreInfo').textContent = `${score.tracks.length} MIDI tracks; ${available.length} contain notes. Map four distinct tracks below. Tempo changes and rests follow this exported file.`;
-            if (available.length < 4) warning('This MIDI contains fewer than four note tracks; export the four-part score first.');
-            else warning('');
+            $('scoreInfo').textContent = `${score.tracks.length} MIDI tracks; ${available.length} contain notes. Solo/unison need one written part; SATB needs four. Tempo changes and rests follow the export.`;
+            const melody = $('melodyTrack'); melody.replaceChildren();
+            available.forEach(i => { const option = document.createElement('option'); option.value = i;
+                option.textContent = `${i + 1}: ${score.tracks[i].name} (${score.tracks[i].notes.length} notes)`; melody.append(option); });
+            if (available.length) melody.value = String(available[0]);
+            warning(available.length ? '' : 'This MIDI has no written-note track.');
             refresh();
         } catch (err) { score = undefined; warning(err.message); }
     };
@@ -154,17 +159,39 @@
             };
             parent.append(card);
         });
+        updateMode();
     }
+    function updateMode() {
+        const mode = $('arrangementMode').value, harmony = mode === 'choir', solo = mode === 'solo';
+        $('melodyTrack').disabled = harmony;
+        $('commonSource').disabled = false;
+        $('assignAll').disabled = recordings.length === 0;
+        $('soloVoice').disabled = !solo;
+        $('modeInfo').textContent = harmony
+            ? 'SATB harmony: assign four distinct written tracks below. You may reuse one recording, but different vocal characters cannot guarantee four realistic singers.'
+            : solo ? 'Solo: the chosen written track and recording play through one selected voice character. Other parts are not rendered.'
+                : 'Unison: all four characters follow the SAME written melody, not SATB harmony. Use SATB mode only after writing four independent parts.';
+        document.querySelectorAll('#parts select[data-field="track"]').forEach(input => { input.disabled = !harmony; });
+        document.querySelectorAll('#parts select[data-field="recording"]').forEach(input => { input.disabled = !harmony; });
+    }
+    $('arrangementMode').onchange = updateMode;
+    $('assignAll').onclick = () => {
+        const source = Number($('commonSource').value);
+        if (!recordings[source]) return warning('Choose a recording first');
+        assignments.forEach(part => { part.recording = source; });
+        refresh();
+        status(`Assigned ${recordings[source].name} to all four voice characters; choose four written parts for SATB harmony.`);
+    };
     refresh();
     $('render').onclick = async () => {
         if (renderPending) return;
         renderPending = true; $('render').disabled = true;
         try {
             if (!score || recordings.length === 0) throw Error('Load both MIDI and a WAV or microphone recording first');
-            if (assignments.some(p => !score.tracks[p.track]?.notes.length)
-                || new Set(assignments.map(p => p.track)).size !== 4) throw Error('Choose four different written-note tracks');
+            const mode = $('arrangementMode').value;
+            const partSnapshot = Studio.arrangeParts(mode, score, assignments,
+                Number($('commonSource').value), Number($('melodyTrack').value), Number($('soloVoice').value));
             status('Rendering locally…'); warning(''); await new Promise(resolve => setTimeout(resolve, 20));
-            const partSnapshot = assignments.map(part => ({ ...part }));
             const mix = await Studio.renderAsync(score, partSnapshot, recordings.slice(), rate, 240,
                 step => status(`Rendering locally… ${step.completed}/${step.total} notes`));
             if (mix.peak < 0.001) throw Error('Rendered silence; choose an audible voiced source and non-muted tracks');
