@@ -36,6 +36,9 @@ const parts = [{ name: 'Soprano', track: 1, recording: 0, correction: 1, volume:
 
 test('one recorded phrase is tagged to two independent written notes, fitted to note lengths and rests', () => {
     const source = take(), original = source.slice();
+    const raw = Studio.taggedNote(source, rate, Studio.hz(57), Math.round(rate * 0.25), parts[0].noteTags[0]);
+    for (let i = 0; i < 500; ++i) assert.ok(Math.abs(raw.samples[i] - source[i]) < 1e-7,
+        `the original consonant-like attack changed at sample ${i}`);
     const mix = Studio.render(score, parts, [{ samples: source }], rate, 3);
     assert.ok(mix.peak > 0.01);
     assert.ok(rms(mix.left, 0.015, 0.04) > 0.002, 'source attack was discarded');
