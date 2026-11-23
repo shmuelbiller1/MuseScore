@@ -133,6 +133,7 @@
     // Using a fixed number of samples per input period drifts against real
     // vibrato; local normalized correlation follows the singer instead.
     function findEpochs(source, rate, sourceHz, options = {}) {
+        if (!(sourceHz >= 65 && sourceHz <= 900)) throw Error('Pitch outside supported voiced range');
         const start = Math.floor((options.cropStart || 0) * rate);
         const end = Math.min(source.length, Math.floor((options.cropEnd || source.length / rate) * rate));
         const period = rate / sourceHz;
@@ -157,7 +158,7 @@
                 const score = dot / Math.sqrt(left * right + 1e-20) - 0.0002 * Math.abs(candidate - predicted);
                 if (score > bestScore) { bestScore = score; best = candidate; }
             }
-            if (bestScore < 0.2) break; // stop at noise/unvoiced material
+            if (bestScore < 0.2 || best <= last) break; // noise or no forward progress
             epochs.push(best); last = best;
         }
         return epochs;

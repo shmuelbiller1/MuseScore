@@ -97,6 +97,10 @@ test('invalid inputs and unnatural register shifts fail visibly or warn', () => 
     assert.throws(() => Studio.estimatePitch(new Float32Array(rate), rate), /silent/);
     assert.throws(() => Studio.vowelNote(source(), rate, 220, 1800, 1000), /outside supported/);
     const score = Studio.parseMidi(midi());
+    const invalid = ['Soprano', 'Alto', 'Tenor', 'Bass'].map((name, i) => ({ name, recording: 0,
+        track: i + 1, sourceHz: 24000 }));
+    assert.throws(() => Studio.render(score, invalid, [{ samples: source() }], rate, 2),
+        /outside supported voiced range/);
     const parts = ['Soprano', 'Alto', 'Tenor', 'Bass'].map((name, i) => ({ name, recording: 0,
         track: i + 1, sourceHz: 130, correction: 1, volume: 0.5 }));
     const mix = Studio.render(score, parts, [{ samples: source(130) }], rate, 2);

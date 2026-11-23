@@ -87,7 +87,9 @@
         const source = recordings[Number($('originalChoice').value)]; if (!source) return warning('Import or record first');
         const link = document.createElement('a'); link.href = source.url;
         const name = source.name.replace(/[^a-z0-9._-]/gi, '_');
-        link.download = /\.(wav|webm|ogg)$/i.test(name) ? name : name + (source.blob.type.includes('ogg') ? '.ogg' : '.webm');
+        const type = source.blob.type;
+        const extension = type.includes('ogg') ? '.ogg' : type.includes('mp4') ? '.m4a' : type.includes('wav') ? '.wav' : '.webm';
+        link.download = /\.(wav|webm|ogg|m4a|mp4)$/i.test(name) ? name : name + extension;
         link.click();
     };
     $('saveWav').onclick = () => {

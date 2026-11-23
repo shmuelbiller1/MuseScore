@@ -11,7 +11,7 @@ const Studio = require('../choir.js');
 const { midi } = require('../examples/fixtures.cjs');
 const code = fs.readFileSync(path.join(__dirname, '../studio.js'), 'utf8');
 
-function page() {
+function page(mimeType = 'audio/webm') {
     const nodes = new Map(), downloads = [], streams = [], urls = [], events = {};
     class Element {
         constructor(tag) { this.tag = tag; this.dataset = {}; this.style = {}; this.children = []; this.disabled = false; this.value = ''; this.textContent = ''; }
@@ -46,7 +46,7 @@ function page() {
         });
     };
     class MediaRecorder {
-        constructor(stream) { this.stream = stream; this.mimeType = 'audio/webm'; this.state = 'inactive'; }
+        constructor(stream) { this.stream = stream; this.mimeType = mimeType; this.state = 'inactive'; }
         start() { this.state = 'recording'; }
         stop() {
             this.state = 'inactive';
@@ -113,6 +113,19 @@ test('switching timbre preset retains selected label and changes tone, not MIDI 
     assert.equal(findByField(updated, 'preset').value, 'Bass');
     assert.equal(findByField(updated, 'track').value, 1);
     assert.equal(findByField(updated, 'formant').value, Studio.defaults.Bass.formant);
+});
+test('Safari MP4 microphone captures keep the correct extension and exact original bytes', async () => {
+    const ui = page('audio/mp4');
+    const recording = ui.$('record').onclick();
+    ui.releasePermission();
+    await recording;
+    ui.$('stop').onclick();
+    await new Promise(resolve => setImmediate(resolve));
+    ui.$('saveOriginal').onclick();
+    const saved = ui.downloads.at(-1);
+    assert.ok(saved.name.endsWith('.m4a'), saved.name);
+    assert.equal(ui.urls.find(item => item.url === saved.url).blob.type, 'audio/mp4');
+    assert.equal(ui.streams[0].track.stopped, true);
 });
 test('repeated record clicks while permission is pending cannot leak a second microphone', async () => {
     const ui = page();
