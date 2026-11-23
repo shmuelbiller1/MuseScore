@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Studio = require('../choir.js');
 const { evaluate } = require('../examples/evaluate-single-source.cjs');
+const { decodeWav } = require('../examples/evaluate-real.cjs');
 const { rate, source, midi } = require('../examples/fixtures.cjs');
 const score = Studio.parseMidi(midi());
 const parts = ['Soprano', 'Alto', 'Tenor', 'Bass'].map((name, i) => ({
@@ -74,6 +75,55 @@ test('real single human vowel renders repeatable solo bass, unison and SATB audi
         'one tenor sample in bass register must warn');
     assert.ok(rms(solo.left, 0, 0.35) < 0.001, 'solo bass must wait for its written onset');
     assert.ok(rms(unison.left, 0.34, 0.45) < 0.001, 'unison must follow melody rest');
+});
+
+test('long sung take auto-selects a voiced vowel after silence without changing notes or original', () => {
+    const samples = new Float32Array(rate * 2);
+    samples.set(source(220, 0.8), rate / 2);
+    const original = samples.slice();
+    const suggestion = Studio.suggestVowel(samples, rate);
+    assert.ok(suggestion, 'expected a usable vowel');
+    assert.ok(suggestion.start >= 0.45 && suggestion.end <= 1.3, JSON.stringify(suggestion));
+    assert.ok(Math.abs(suggestion.hz - 220) < 5, `unexpected source Hz: ${suggestion.hz}`);
+    const bass = Studio.arrangeParts('solo', score, parts.map(p => ({ ...p, sourceHz: 0 })), 0, 4, 3);
+    assert.throws(() => Studio.render(score, bass, [{ samples }], rate, 3), /silent/);
+    const mix = Studio.render(score, bass, [{ samples, suggestion }], rate, 3);
+    assert.ok(mix.peak > 0.01);
+    assert.throws(() => Studio.render(score, [{ ...bass[0], cropStart: 1.5, cropEnd: 1.8 }],
+        [{ samples, suggestion }], rate, 3), /silent/,
+    'a manual crop must override the automatic selection, even when invalid');
+    assert.ok(Math.abs(Studio.estimatePitch(mix.left, rate, 0.415) - Studio.hz(57)) < 8);
+    assert.deepEqual(samples, original, 'automatic selection must not edit original audio');
+    assert.equal(Studio.suggestVowel(new Float32Array(rate * 2), rate), null,
+        'silence must not be called a usable vowel');
+});
+
+test('licensed human vowel in a longer silent-leading take is selected and sings the written bass', () => {
+    const human = decodeWav(fs.readFileSync(path.join(__dirname, '../examples/vocalset/tenor-m2-long-a.wav')));
+    const take = new Float32Array(rate * 2); take.set(human, rate / 2);
+    const suggestion = Studio.suggestVowel(take, rate);
+    assert.ok(suggestion && suggestion.start >= 0.45 && suggestion.end <= 1.32, JSON.stringify(suggestion));
+    const bass = Studio.arrangeParts('solo', score, parts.map(p => ({ ...p, sourceHz: 0 })), 0, 4, 3);
+    const rendered = Studio.render(score, bass, [{ samples: take, suggestion }], rate, 3);
+    assert.ok(rendered.peak > 0.01);
+    const pitch = Studio.estimatePitch(rendered.left, rate, 0.415);
+    assert.ok(Math.abs(pitch - Studio.hz(57)) < 8, `written bass pitch ${pitch}`);
+});
+
+test('solo/unison never inherit a different recording’s source Hz or crop', () => {
+    const configured = parts.map(part => ({ ...part, sourceHz: 110, cropStart: 1.0, cropEnd: 1.5 }));
+    configured[0].recording = 1;
+    const bass = Studio.arrangeParts('solo', score, configured, 1, 4, 3)[0];
+    assert.deepEqual([bass.recording, bass.sourceHz, bass.cropStart, bass.cropEnd], [1, 0, 0, 0]);
+    assert.deepEqual([configured[3].recording, configured[3].sourceHz, configured[3].cropStart], [0, 110, 1]);
+    const unison = Studio.arrangeParts('unison', score, configured, 1, 1);
+    assert.deepEqual([unison[0].sourceHz, unison[0].cropStart, unison[0].cropEnd], [110, 1, 1.5]);
+    for (const part of unison.slice(1)) {
+        assert.deepEqual([part.sourceHz, part.cropStart, part.cropEnd], [0, 0, 0]);
+    }
+    // The shared source, not the previous card's manual 110 Hz, drives bass F0.
+    const solo = Studio.render(score, [bass], [recordings[0], { samples: source(220) }], rate, 3);
+    assert.ok(Math.abs(Studio.estimatePitch(solo.left, rate, 0.415) - Studio.hz(57)) < 8);
 });
 
 test('choir mode rejects missing or duplicate written parts instead of inventing harmony', () => {

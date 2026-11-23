@@ -129,6 +129,35 @@
         return rate / (best + offset);
     }
 
+    // Find a short, approximately steady vowel in a longer singing take.
+    // This is NOT transcription or lyric alignment: notes still come from MIDI.
+    // Limit the scan so long imports cannot stall the browser indefinitely.
+    function suggestVowel(samples, rate) {
+        if (!samples || !Number.isFinite(rate) || rate < 8000) throw Error('Invalid source recording');
+        const duration = samples.length / rate;
+        if (duration < 0.26) return null;
+        const stop = Math.min(duration - 0.24, 8), step = 0.12;
+        let best = null;
+        for (let at = 0; at <= stop + 1e-9; at += step) {
+            try {
+                const first = estimatePitch(samples, rate, at + 0.01, 0, at + 0.105);
+                const second = estimatePitch(samples, rate, at + 0.13, 0, at + 0.225);
+                if (Math.abs(1200 * Math.log2(first / second)) > 55) continue;
+                const start = Math.floor((at + 0.01) * rate), end = Math.floor((at + 0.225) * rate);
+                let energy = 0;
+                for (let i = start; i < end; ++i) energy += samples[i] ** 2;
+                const rms = Math.sqrt(energy / (end - start));
+                if (rms < 0.01) continue;
+                // Strongly favor a stable sustained section over a louder
+                // transient. An early tie is more predictable for the user.
+                const quality = rms / (1 + Math.abs(1200 * Math.log2(first / second)) / 20);
+                if (!best || quality > best.quality) best = { start: +at.toFixed(3), end: +(at + 0.24).toFixed(3),
+                    hz: +(Math.sqrt(first * second)).toFixed(2), quality };
+            } catch { /* skip silent, unvoiced or unreliable regions */ }
+        }
+        return best && { start: best.start, end: best.end, hz: best.hz };
+    }
+
     // Track a consistent voiced-waveform phase across the selected vowel.
     // Using a fixed number of samples per input period drifts against real
     // vibrato; local normalized correlation follows the singer instead.
@@ -235,11 +264,16 @@
             return parts.map(part => ({ ...part }));
         }
         if (!score.tracks[melodyTrack]?.notes.length) throw Error('Choose a written melody track for solo or unison');
+        // Analysis settings belong to a particular recording. A manual F0 or
+        // crop from an earlier take must never silently retarget a new take.
+        const retarget = part => part.recording === recording
+            ? { ...part, track: melodyTrack }
+            : { ...part, track: melodyTrack, recording, sourceHz: 0, cropStart: 0, cropEnd: 0 };
         if (mode === 'solo') {
             if (!Number.isInteger(soloVoice) || soloVoice < 0 || soloVoice >= 4) throw Error('Choose a solo voice character');
-            return [{ ...parts[soloVoice], track: melodyTrack, recording, mute: false, solo: false }];
+            return [{ ...retarget(parts[soloVoice]), mute: false, solo: false }];
         }
-        if (mode === 'unison') return parts.map(part => ({ ...part, track: melodyTrack, recording }));
+        if (mode === 'unison') return parts.map(retarget);
         throw Error('Choose solo, four-part choir, or unison layers');
     }
 
@@ -268,8 +302,10 @@
             const part = parts[partIndex]; if (!selected.includes(part)) continue;
             const source = recordings[part.recording], notes = score.tracks[part.track]?.notes;
             if (!notes) throw Error('Missing MIDI track for ' + part.name);
-            const sourceHz = estimatePitch(source.samples, rate, part.cropStart || 0, part.sourceHz || 0, part.cropEnd || 0);
-            const noteOptions = { ...part, epochs: findEpochs(source.samples, rate, sourceHz, part) };
+            const automatic = !part.cropStart && !part.cropEnd && source.suggestion;
+            const region = automatic ? { ...part, cropStart: source.suggestion.start, cropEnd: source.suggestion.end } : part;
+            const sourceHz = estimatePitch(source.samples, rate, region.cropStart || 0, part.sourceHz || 0, region.cropEnd || 0);
+            const noteOptions = { ...region, epochs: findEpochs(source.samples, rate, sourceHz, region) };
             const pan = clamp(part.pan ?? 0, -1, 1), volume = clamp(part.volume ?? 0.7, 0, 1);
             const gainL = Math.cos((pan + 1) * Math.PI / 4) * volume, gainR = Math.sin((pan + 1) * Math.PI / 4) * volume;
             for (const note of notes) {
@@ -329,5 +365,5 @@
         for (let i = 0; i < frames; ++i) for (const ch of channels) { view.setInt16(at, Math.round(clamp(ch[i] || 0, -1, 1) * 32767), true); at += 2; }
         return output;
     }
-    return { parseMidi, noteTrackIndices, arrangeParts, estimatePitch, vowelNote, shape, render, renderAsync, wav, defaults, hz };
+    return { parseMidi, noteTrackIndices, arrangeParts, estimatePitch, suggestVowel, vowelNote, shape, render, renderAsync, wav, defaults, hz };
 });

@@ -22,7 +22,7 @@
 <section><h2>1 · Source recordings</h2>
 <label>Import WAV (mono or stereo)<input id="wav" type="file" accept=".wav,audio/wav" multiple></label>
 <button id="record">Record microphone</button><button id="stop" disabled>Stop recording</button>
-<p id="sources">No recordings loaded. Choose a sustained vowel, with minimal background noise, for each register if possible. Files remain in this browser session; originals are never overwritten or uploaded.</p>
+<p id="sources">No recordings loaded. Sing a clear held vowel or import a WAV singing take. For takes over 1.2 seconds, a steady vowel in the first 8 seconds is selected automatically; enter a start/end crop for any part to override it. The tool repeats that vowel on score notes—it cannot carry every word or consonant from the take. Originals are never overwritten or uploaded.</p>
 <label>Preview original <select id="originalChoice"></select></label><button id="playOriginal">Play original</button> <button id="saveOriginal">Save original capture</button> <button id="saveWav">Save reimportable WAV</button>
 </section>
 <section><h2>2 · Score timing</h2><label>MuseScore MIDI export (.mid) <input id="midi" type="file" accept=".mid,.midi,audio/midi"></label><p id="scoreInfo">Export MIDI from the open score, then select it here. A single written-note track is enough for solo or unison; four distinct tracks are required for SATB harmony. No manuscript recognition or Hebrew text processing.</p></section>

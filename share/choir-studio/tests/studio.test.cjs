@@ -11,7 +11,7 @@ const Studio = require('../choir.js');
 const { midi } = require('../examples/fixtures.cjs');
 const code = fs.readFileSync(path.join(__dirname, '../studio.js'), 'utf8');
 
-function page(mimeType = 'audio/webm') {
+function page(mimeType = 'audio/webm', decodedSamples) {
     const nodes = new Map(), downloads = [], streams = [], urls = [], events = {};
     class Element {
         constructor(tag) { this.tag = tag; this.dataset = {}; this.style = {}; this.children = []; this.disabled = false; this.value = ''; this.textContent = ''; }
@@ -32,12 +32,12 @@ function page(mimeType = 'audio/webm') {
         }
     };
     document.getElementById('arrangementMode').value = 'solo';
-    const source = Float32Array.from({ length: 24000 }, (_, i) => 0.2 * Math.sin(2 * Math.PI * 220 * i / 24000));
+    const source = decodedSamples || Float32Array.from({ length: 24000 }, (_, i) => 0.2 * Math.sin(2 * Math.PI * 220 * i / 24000));
     class AudioContext {
         constructor(config) { assert.equal(config.sampleRate, 24000); }
         async resume() {}
         async decodeAudioData() {
-            return { duration: 1, length: source.length, numberOfChannels: 1, getChannelData: () => source };
+            return { duration: source.length / 24000, length: source.length, numberOfChannels: 1, getChannelData: () => source };
         }
     }
     let requests = 0, releasePermission;
@@ -142,6 +142,58 @@ test('solo/choir/unison picker switches track editing and rejects duplicate SATB
     assert.match(ui.$('modeInfo').textContent, /not SATB harmony/);
     await ui.$('render').onclick();
     assert.equal(ui.$('listen').disabled, false);
+});
+
+test('long sung take is auto-voiced; changing a part source resets recording-specific analysis', async () => {
+    const samples = new Float32Array(24000 * 2);
+    for (let i = 12000; i < 31200; i++) samples[i] = 0.2 * Math.sin(2 * Math.PI * 220 * i / 24000);
+    const ui = page('audio/webm', samples);
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const files = ['voice-1.wav', 'voice-2.wav'].map(name => {
+        const file = new Blob([Studio.wav([samples], 24000)], { type: 'audio/wav' });
+        Object.assign(file, { name }); return file;
+    });
+    await ui.$('wav').onchange({ target: { files } });
+    assert.match(ui.$('sources').textContent, /auto vowel/);
+    assert.match(ui.$('status').textContent, /Automatically selected/);
+    const card = ui.$('parts').children[3];
+    for (const [field, value] of [['sourceHz', '110'], ['cropStart', '1'], ['cropEnd', '1.4']]) {
+        const input = findByField(card, field); input.value = value; card.onchange({ target: input });
+    }
+    const sourcePicker = findByField(card, 'recording'); sourcePicker.value = '1'; card.onchange({ target: sourcePicker });
+    const updated = ui.$('parts').children[3];
+    for (const field of ['sourceHz', 'cropStart', 'cropEnd']) assert.equal(findByField(updated, field).value, 0);
+    assert.equal(findByField(updated, 'recording').value, 1);
+    ui.$('commonSource').value = '0'; ui.$('assignAll').onclick();
+    for (const field of ['sourceHz', 'cropStart', 'cropEnd']) assert.equal(findByField(ui.$('parts').children[3], field).value, 0);
+    ui.$('arrangementMode').value = 'choir';
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+});
+
+test('editing a voice or arrangement invalidates stale audio and changes during render cannot publish it', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'voice.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false);
+    ui.$('listen').onclick();
+    const mode = ui.$('arrangementMode'); mode.value = 'unison'; mode.onchange();
+    assert.equal(ui.$('listen').disabled, true);
+    assert.equal(ui.$('download').disabled, true);
+    assert.equal(ui.$('player').src, '');
+    const rendering = ui.$('render').onclick();
+    const volume = findByField(ui.$('parts').children[0], 'volume'); volume.value = '0.3'; volume.oninput();
+    await rendering;
+    assert.match(ui.$('warning').textContent, /Settings changed during render/);
+    assert.equal(ui.$('listen').disabled, true);
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false);
+    const card = ui.$('parts').children[0];
+    const preset = findByField(card, 'preset'); preset.value = 'Bass'; card.onchange({ target: preset });
+    assert.equal(ui.$('listen').disabled, true);
 });
 
 test('four imported source files map one-to-one in picker order', async () => {

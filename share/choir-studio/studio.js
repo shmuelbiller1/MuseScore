@@ -6,7 +6,15 @@
     'use strict';
     const $ = id => document.getElementById(id), names = ['Soprano', 'Alto', 'Tenor', 'Bass'];
     const rate = 24000, recordings = [], assignments = [], Studio = window.ChoirStudio;
-    let score, context, mediaRecorder, micStream, processedUrl, recordPending = false, renderPending = false;
+    let score, context, mediaRecorder, micStream, processedUrl, recordPending = false, renderPending = false, revision = 0;
+    function invalidateProcessed() {
+        ++revision;
+        if (processedUrl) {
+            if ($('player').src === processedUrl) { $('player').pause(); $('player').src = ''; }
+            URL.revokeObjectURL(processedUrl); processedUrl = undefined;
+        }
+        $('listen').disabled = $('download').disabled = true;
+    }
     async function audio() { if (!context) context = new AudioContext({ sampleRate: rate }); await context.resume(); return context; }
     const status = text => { $('status').textContent = text; };
     const warning = text => { $('warning').textContent = text; };
@@ -22,12 +30,18 @@
         // Never overwrite or re-encode the original capture. The PCM working
         // buffer is separate from the user's original Blob.
         const saved = blob;
-        const index = recordings.push({ name, samples, blob: saved, url: URL.createObjectURL(saved) }) - 1;
+        const suggestion = buffer.duration > 1.2 ? Studio.suggestVowel(samples, rate) : null;
+        invalidateProcessed();
+        const index = recordings.push({ name, samples, blob: saved, suggestion, url: URL.createObjectURL(saved) }) - 1;
         for (const selector of ['originalChoice', 'commonSource']) {
             const choice = document.createElement('option'); choice.value = String(index); choice.textContent = name; $(selector).append(choice);
         }
-        $('sources').textContent = recordings.map((r, i) => `${i + 1}. ${r.name} (${(r.samples.length / rate).toFixed(1)} s)`).join(' · ');
-        refresh(); status('Source ready. Select a voiced vowel region; pitch detection can be overridden in Hz.');
+        $('sources').textContent = recordings.map((r, i) => `${i + 1}. ${r.name} (${(r.samples.length / rate).toFixed(1)} s)`
+            + (r.suggestion ? ` · auto vowel ${r.suggestion.start}–${r.suggestion.end} s (~${r.suggestion.hz} Hz)` : '')).join(' · ');
+        refresh();
+        status(suggestion ? `Source ready. Automatically selected a steady vowel at ${suggestion.start}–${suggestion.end} s; enter crop times to override it.`
+            : 'Source ready. For singing phrases, choose a steady vowel region; pitch detection can be overridden in Hz.');
+        if (buffer.duration > 1.2 && !suggestion) warning('No reliable sustained vowel was found in the first 8 seconds. Select vowel start/end manually, or use a clear sustained take.');
     }
     $('wav').onchange = async event => {
         const first = recordings.length;
@@ -104,7 +118,8 @@
     };
     $('midi').onchange = async event => {
         try {
-            score = Studio.parseMidi(await event.target.files[0].arrayBuffer());
+            const parsed = Studio.parseMidi(await event.target.files[0].arrayBuffer());
+            invalidateProcessed(); score = parsed;
             const available = Studio.noteTrackIndices(score);
             // A tempo-only conductor track must not duplicate Soprano/Alto.
             assignments.forEach((part, i) => { part.track = available[i] ?? -1; });
@@ -115,12 +130,12 @@
             if (available.length) melody.value = String(available[0]);
             warning(available.length ? '' : 'This MIDI has no written-note track.');
             refresh();
-        } catch (err) { score = undefined; warning(err.message); }
+        } catch (err) { invalidateProcessed(); score = undefined; warning(err.message); }
     };
     function makeSlider(label, key, min, max, step, value) {
         const wrapper = document.createElement('label'), input = document.createElement('input'), display = document.createElement('span');
         input.type = 'range'; input.min = min; input.max = max; input.step = step; input.value = value; input.dataset.field = key;
-        display.textContent = `${label}: ${value}`; input.oninput = () => { display.textContent = `${label}: ${input.value}`; };
+        display.textContent = `${label}: ${value}`; input.oninput = () => { display.textContent = `${label}: ${input.value}`; invalidateProcessed(); };
         wrapper.append(display, input); return wrapper;
     }
     function refresh() {
@@ -152,9 +167,17 @@
             }
             card.onchange = event => {
                 const { field } = event.target.dataset; if (!field) return;
+                invalidateProcessed();
                 if (field === 'preset') {
                     part.preset = event.target.value;
                     Object.assign(part, Studio.defaults[part.preset]); refresh();
+                } else if (field === 'recording') {
+                    const selected = Number(event.target.value);
+                    if (selected !== part.recording) {
+                        part.recording = selected;
+                        part.sourceHz = part.cropStart = part.cropEnd = 0;
+                        refresh();
+                    }
                 } else part[field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value);
             };
             parent.append(card);
@@ -174,11 +197,18 @@
         document.querySelectorAll('#parts select[data-field="track"]').forEach(input => { input.disabled = !harmony; });
         document.querySelectorAll('#parts select[data-field="recording"]').forEach(input => { input.disabled = !harmony; });
     }
-    $('arrangementMode').onchange = updateMode;
+    $('arrangementMode').onchange = () => { invalidateProcessed(); updateMode(); };
+    for (const selector of ['melodyTrack', 'commonSource', 'soloVoice']) $(selector).onchange = invalidateProcessed;
     $('assignAll').onclick = () => {
         const source = Number($('commonSource').value);
         if (!recordings[source]) return warning('Choose a recording first');
-        assignments.forEach(part => { part.recording = source; });
+        invalidateProcessed();
+        assignments.forEach(part => {
+            if (part.recording !== source) {
+                part.recording = source;
+                part.sourceHz = part.cropStart = part.cropEnd = 0;
+            }
+        });
         refresh();
         status(`Assigned ${recordings[source].name} to all four voice characters; choose four written parts for SATB harmony.`);
     };
@@ -191,11 +221,13 @@
             const mode = $('arrangementMode').value;
             const partSnapshot = Studio.arrangeParts(mode, score, assignments,
                 Number($('commonSource').value), Number($('melodyTrack').value), Number($('soloVoice').value));
+            invalidateProcessed();
+            const renderRevision = revision, renderScore = score;
             status('Rendering locally…'); warning(''); await new Promise(resolve => setTimeout(resolve, 20));
-            const mix = await Studio.renderAsync(score, partSnapshot, recordings.slice(), rate, 240,
+            const mix = await Studio.renderAsync(renderScore, partSnapshot, recordings.slice(), rate, 240,
                 step => status(`Rendering locally… ${step.completed}/${step.total} notes`));
+            if (renderRevision !== revision) throw Error('Settings changed during render; render again to hear the new selection.');
             if (mix.peak < 0.001) throw Error('Rendered silence; choose an audible voiced source and non-muted tracks');
-            if (processedUrl) URL.revokeObjectURL(processedUrl);
             processedUrl = URL.createObjectURL(new Blob([Studio.wav([mix.left, mix.right], rate)], { type: 'audio/wav' }));
             $('listen').disabled = $('download').disabled = false;
             status(`Rendered ${(mix.left.length / rate).toFixed(2)} seconds; peak ${mix.peak.toFixed(3)}. Original source unchanged.`);
