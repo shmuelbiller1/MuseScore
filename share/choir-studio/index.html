@@ -2,10 +2,10 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Personal Voice Choir Studio — experimental</title>
 <style>
-:root{font-family:system-ui,sans-serif;color:#e6e8ec;background:#171b24}*{box-sizing:border-box}body{max-width:1100px;margin:0 auto;padding:26px}h1{margin-bottom:4px}p,small{color:#c2cad8;line-height:1.55}section,article{background:#242b38;border:1px solid #414c60;border-radius:12px;padding:16px;margin:14px 0}label{display:inline-grid;gap:5px;margin:6px 12px 6px 0;font-size:.9rem}input,select,button{background:#101826;color:#fff;border:1px solid #77859d;border-radius:6px;padding:7px}input[type=range]{padding:0;width:115px}button{cursor:pointer;background:#314d82}button:hover{background:#456dad}button:disabled{opacity:.5}header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}.parts article{margin:0}#warning{color:#ffd69c;white-space:pre-wrap}#status{color:#a9dfc1}audio{max-width:100%}a{color:#9dc2ff}summary{cursor:pointer;padding:10px}.danger{background:#573b38}.tag-row{display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid #414c60;padding:5px;gap:4px}.tag-row label{margin:2px}.tag-row input{width:88px}#tagWave{width:100%;height:110px;background:#101826;border:1px solid #77859d;border-radius:6px}
+:root{font-family:system-ui,sans-serif;color:#e6e8ec;background:#171b24}*{box-sizing:border-box}body{max-width:1100px;margin:0 auto;padding:26px}h1{margin-bottom:4px}p,small{color:#c2cad8;line-height:1.55}section,article{background:#242b38;border:1px solid #414c60;border-radius:12px;padding:16px;margin:14px 0}label{display:inline-grid;gap:5px;margin:6px 12px 6px 0;font-size:.9rem}input,select,button{background:#101826;color:#fff;border:1px solid #77859d;border-radius:6px;padding:7px}input[type=range]{padding:0;width:115px}button{cursor:pointer;background:#314d82}button:hover{background:#456dad}button:disabled{opacity:.5}header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}.parts article{margin:0}#warning{color:#ffd69c;white-space:pre-wrap}#status{color:#a9dfc1}audio{max-width:100%}a{color:#9dc2ff}summary{cursor:pointer;padding:10px}.danger{background:#573b38}.tag-row{display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid #414c60;padding:5px;gap:4px}.tag-row label{margin:2px}.tag-row input{width:88px}#tagWave,#scoreWave{width:100%;height:110px;background:#101826;border:1px solid #77859d;border-radius:6px}
 </style></head><body>
 <h1>Personal Voice Choir Studio <small>experimental · offline</small></h1>
-<p>Start with <strong>one singing recording</strong> and a MIDI export of your score. Sing one written part alone, layer that melody in unison, or use the same recording for four <em>independently written</em> score parts. Notes and tempo come from the score export; the recording supplies timbre. This offline vowel prototype does not synthesize lyrics or claim realistic voices. Wide pitch shifts may sound unnatural.</p>
+<p>Start with <strong>one singing recording</strong> and a MIDI export of your score. Sing one written part alone, layer that melody in unison, or use the same recording for four <em>independently written</em> score parts. Tag a recording slice to each note, hear it before and after stretch/pitch correction, and explicitly change a note or transpose the arrangement. Written MIDI and original audio remain unchanged. This offline experiment does not synthesize lyrics or claim realistic voices; wide shifts may sound unnatural.</p>
 <details><summary>Listen to the real-singer before/after example (CC BY 4.0)</summary>
 <section><p>Actual licensed VocalSet vowel excerpts, not a synthetic test or a claim of realism. The original is 0.8 seconds; the processed soprano is a 0.5-second A4. The demo uses four source registers, each with its own written notes, including bass A2. <a href="examples/vocalset/ATTRIBUTION.md">Licence, source and changes</a>.</p>
 <label>Original soprano vowel<audio controls src="examples/vocalset/soprano-f1-long-a.wav"></audio></label>
@@ -24,6 +24,12 @@
 <label>Unchanged source<audio controls src="examples/vocalset/tenor-m2-long-a.wav"></audio></label>
 <label>Tagged result<audio controls src="examples/after-tagged-real-tenor.wav"></audio></label>
 </section></details>
+<details><summary>Hear an explicit note change and a G-minor key change</summary><section>
+<p>One attributed real soprano vowel, manually tagged for two written notes. In the first output, written A4 is <em>explicitly</em> auditioned as B4; in the second, an A-minor → G-minor transposition moves A4→G4 and B4→A4. The original MIDI notes are not rewritten. The source is a vowel, not a lyric phrase. <a href="examples/pitch-edit-metrics.json">Objective F0 metrics and edit descriptions</a> · <a href="examples/vocalset/ATTRIBUTION.md">CC BY 4.0 attribution</a>.</p>
+<label>Unchanged recorded source<audio controls src="examples/vocalset/soprano-f1-long-a.wav"></audio></label>
+<label>Tagged A4 → B4<audio controls src="examples/after-tagged-A4-to-B4.wav"></audio></label>
+<label>A minor → G minor<audio controls src="examples/after-tagged-A-minor-to-G-minor.wav"></audio></label>
+</section></details>
 <section><h2>1 · Source recordings</h2>
 <label>Import WAV (mono or stereo)<input id="wav" type="file" accept=".wav,audio/wav" multiple></label>
 <button id="record">Record microphone</button><button id="stop" disabled>Stop recording</button>
@@ -41,15 +47,24 @@
 <section><h2>4 · Optional: tag a sung take to the written notes</h2>
 <p>For a recording of a sung phrase, mark which <strong>source time range</strong> belongs to each written note. Drag across the waveform to set the selected note's range, or enter start/end seconds and move it ±50 ms. The score still supplies note pitch, onset, length and rests. The source range is fitted to that note's duration; the center is pitch-shifted while short original attack/release portions remain. This is experimental: it cannot identify syllables automatically and may distort consonants, vowels or extreme bass/treble shifts.</p>
 <label><input id="phraseMode" type="checkbox"> Use tagged singing ranges instead of repeating one vowel</label>
+<p><strong>Pitch control:</strong> the original MIDI stays unchanged. Choose keys of the same mode for a global transposition (A minor → G minor is −2 semitones), then optionally change any output note individually below. Switching Major ↔ Minor is not a simple transposition; edit the written harmony in MuseScore first. The target key is also a note-choice guide, not an automatic reharmonizer.</p>
+<label>Score's original key <select id="keyFrom"></select></label><label>Output key / scale guide <select id="keyTo"></select></label>
+<label>Additional octave <select id="keyOctaves"><option value="-1">Down one</option><option value="0" selected>Same octave</option><option value="1">Up one</option></select></label>
+<button id="quickGMinor" type="button">Example: A minor → G minor</button><p id="transposeInfo">No pitch transposition. Written MIDI notes remain the reference.</p>
 <label>Part to tag <select id="tagVoice"><option value="0">Soprano</option><option value="1">Alto</option><option value="2">Tenor</option><option value="3">Bass</option></select></label>
 <button id="fillTags">Guess sequential ranges from note lengths</button> <button id="clearTags">Clear this part's tags</button>
 <p id="tagInfo">Load a MIDI and a recording, then choose a part. Guessed ranges are only a starting point; check each by listening.</p>
+<p><strong>Score note timeline (current page of 20):</strong> select a colored note to see its name, written time, output pitch, linked source slice and stretch. Gaps are written rests. Green is in the target-key guide; purple is chromatic. The source waveform below uses recording time, not score time.</p>
+<canvas id="scoreWave" width="900" height="110" aria-label="Written score notes, output pitches and rests"></canvas>
+<p id="noteLink">Choose a score note to inspect its linked source range.</p>
 <label>Waveform from (s) <input id="waveStart" type="number" min="0" step="0.05" value="0"></label>
 <label>Waveform to (s) <input id="waveEnd" type="number" min="0" step="0.05" value="5"></label>
 <canvas id="tagWave" width="900" height="110" aria-label="Recording waveform with tagged source ranges"></canvas>
 <p>Click a note row to select it; drag across the waveform to set that note's source range. Adjust the zoom above for precise tags.</p>
 <p id="tagPageInfo"></p><button id="tagPrevious">Previous 20 notes</button> <button id="tagNext">Next 20 notes</button><div id="tagRows"></div>
-<audio id="tagPlayer" controls aria-label="Preview original tagged source range"></audio>
+<label>Original tagged slice <audio id="tagPlayer" controls aria-label="Preview original tagged source range"></audio></label>
+<label>Processed selected note (pitch + stretch) <audio id="processedTagPlayer" controls aria-label="Preview processed note"></audio></label>
+<p id="previewInfo">Hear the source range, then the processed note. A different pitch here is an explicit edit, not a voice-character preset.</p>
 <p>All written notes of every active part must have a valid tag in this mode. In unison, all four characters share the same tagged melody; in SATB, tag each independent part. A note's original recording remains available unchanged.</p>
 </section>
 <section><h2>5 · Save, listen and export</h2>

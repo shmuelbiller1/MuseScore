@@ -11,6 +11,34 @@
     'use strict';
     const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
     const hz = midi => 440 * Math.pow(2, (midi - 69) / 12);
+    const sharpNames = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+    const flatNames = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+    const noteName = (pitch, flats = false) => (flats ? flatNames : sharpNames)[pitch % 12] + (Math.floor(pitch / 12) - 1);
+    function keySemitones(from, to, octaves = 0) {
+        const key = value => {
+            const match = /^(1[01]|[0-9]):(major|minor)$/.exec(value);
+            if (!match) throw Error('Choose a valid source and target key');
+            return { tonic: Number(match[1]), mode: match[2] };
+        };
+        const a = key(from), b = key(to);
+        if (a.mode !== b.mode) throw Error('Major-to-minor changes are not a transposition; edit the written notes or choose keys of the same mode.');
+        if (!Number.isInteger(octaves) || octaves < -1 || octaves > 1) throw Error('Choose a valid octave offset');
+        return ((b.tonic - a.tonic + 18) % 12) - 6 + 12 * octaves;
+    }
+    function inKey(pitch, key) {
+        const match = /^(1[01]|[0-9]):(major|minor)$/.exec(key);
+        if (!match) throw Error('Choose a valid key guide');
+        const degrees = match[2] === 'minor' ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11];
+        return degrees.includes(((pitch - Number(match[1])) % 12 + 12) % 12);
+    }
+    function outputPitch(note, part, index) {
+        const transpose = part.transposeSemitones ?? 0, delta = part.pitchDeltas?.[index] ?? 0;
+        if (!Number.isInteger(transpose) || Math.abs(transpose) > 24 || !Number.isInteger(delta)
+            || Math.abs(delta) > 24 || !Number.isInteger(note.pitch)) throw Error('Invalid pitch edit');
+        const target = note.pitch + transpose + delta;
+        if (target < 0 || target > 127 || hz(target) < 50 || hz(target) > 1400) throw Error('Output note outside supported singing range');
+        return target;
+    }
     const defaults = {
         Soprano: { brightness: 0.68, warmth: 0.27, breathiness: 0.12, resonance: 0.36, strength: 0.65, formant: 1.12 },
         Alto: { brightness: 0.45, warmth: 0.65, breathiness: 0.06, resonance: 0.46, strength: 0.64, formant: 0.98 },
@@ -366,7 +394,13 @@
             const pan = clamp(part.pan ?? 0, -1, 1), volume = clamp(part.volume ?? 0.7, 0, 1);
             const gainL = Math.cos((pan + 1) * Math.PI / 4) * volume, gainR = Math.sin((pan + 1) * Math.PI / 4) * volume;
             for (let noteIndex = 0; noteIndex < notes.length; ++noteIndex) {
-                const note = notes[noteIndex], noteHz = hz(note.pitch);
+                const note = notes[noteIndex];
+                let targetPitch;
+                try { targetPitch = outputPitch(note, part, noteIndex); }
+                catch (err) { throw Error(part.name + ' note ' + (noteIndex + 1) + ': ' + err.message); }
+                const noteHz = hz(targetPitch);
+                if (targetPitch !== note.pitch) warnings.push(part.name + ' note ' + (noteIndex + 1)
+                    + ': explicit pitch edit ' + noteName(note.pitch) + ' → ' + noteName(targetPitch) + ' (original MIDI unchanged).');
                 if ((part.correction ?? 1) < 1) warnings.push(part.name + ': correction below 100% does not preserve the written pitch.');
                 const start = Math.round(note.startSeconds * rate), stop = Math.min(frames, Math.round(note.endSeconds * rate));
                 if (start >= frames || stop <= start) continue;
@@ -376,7 +410,7 @@
                     catch (err) { throw Error(part.name + ' note ' + (noteIndex + 1) + ': ' + err.message); }
                 }
                 const detectedHz = tagged ? tagged.sourceHz : sourceHz, ratio = noteHz / detectedHz;
-                if (ratio > 1.7 || ratio < 0.59) warnings.push(part.name + ' note ' + note.pitch + ': extreme source-to-score pitch shift; use another recording in this register.');
+                if (ratio > 1.7 || ratio < 0.59) warnings.push(part.name + ' note ' + targetPitch + ': extreme source-to-score pitch shift; use another recording in this register.');
                 if (tagged) {
                     const sourceDuration = part.noteTags[noteIndex].end - part.noteTags[noteIndex].start;
                     const stretch = (note.endSeconds - note.startSeconds) / sourceDuration;
@@ -434,5 +468,6 @@
         for (let i = 0; i < frames; ++i) for (const ch of channels) { view.setInt16(at, Math.round(clamp(ch[i] || 0, -1, 1) * 32767), true); at += 2; }
         return output;
     }
-    return { parseMidi, noteTrackIndices, arrangeParts, estimatePitch, suggestVowel, vowelNote, taggedNote, distributeTags, shape, render, renderAsync, wav, defaults, hz };
+    return { parseMidi, noteTrackIndices, arrangeParts, estimatePitch, suggestVowel, vowelNote, taggedNote, distributeTags,
+        shape, render, renderAsync, wav, defaults, hz, noteName, keySemitones, inKey, outputPitch };
 });

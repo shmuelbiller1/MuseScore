@@ -74,15 +74,30 @@
             || !Number.isInteger(controls.melodyTrack) || !Number.isInteger(controls.commonSource)
             || !Number.isInteger(controls.soloVoice) || !Number.isInteger(controls.tagVoice)
             || typeof controls.phraseMode !== 'boolean') throw Error('Invalid project controls');
+        const sourceKey = controls.sourceKey ?? '0:major', targetKey = controls.targetKey ?? '0:major';
+        const octaves = controls.octaves ?? 0;
+        if (!/^(1[01]|[0-9]):(major|minor)$/.test(sourceKey) || !/^(1[01]|[0-9]):(major|minor)$/.test(targetKey)
+            || sourceKey.split(':')[1] !== targetKey.split(':')[1]
+            || !Number.isInteger(octaves) || octaves < -1 || octaves > 1) throw Error('Invalid saved key transposition');
         return { mode: controls.mode, melodyTrack: controls.melodyTrack, commonSource: controls.commonSource,
-            soloVoice: controls.soloVoice, tagVoice: controls.tagVoice, phraseMode: controls.phraseMode };
+            soloVoice: controls.soloVoice, tagVoice: controls.tagVoice, phraseMode: controls.phraseMode,
+            sourceKey, targetKey, octaves };
     }
-    async function encodeProject({ midiBytes, recordings, parts, tags, controls }) {
+    function checkPitchEdits(edits) {
+        if (!Array.isArray(edits) || edits.length > 10000) throw Error('Invalid saved note pitches');
+        const seen = new Set();
+        return edits.map(item => {
+            if (!Array.isArray(item) || item.length !== 2 || !/^\d+:\d+$/.test(item[0])
+                || seen.has(item[0]) || !Number.isInteger(item[1]) || Math.abs(item[1]) > 24) throw Error('Invalid saved note pitch edit');
+            seen.add(item[0]); return [item[0], item[1]];
+        });
+    }
+    async function encodeProject({ midiBytes, recordings, parts, tags, controls, pitchEdits = [] }) {
         if (!ArrayBuffer.isView(midiBytes) || midiBytes.BYTES_PER_ELEMENT !== 1
             || !midiBytes.length || midiBytes.length > MAX_MIDI
             || !Array.isArray(recordings) || !recordings.length || recordings.length > 16) throw Error('Load a MIDI and 1–16 recordings before saving');
         const checkedParts = checkParts(parts, recordings.length), checkedTags = checkTags(tags, recordings.length);
-        const checkedControls = checkControls(controls);
+        const checkedControls = checkControls(controls), checkedEdits = checkPitchEdits(pitchEdits);
         let total = midiBytes.length;
         const sources = [];
         for (const recording of recordings) {
@@ -94,7 +109,7 @@
                 bytes: base64(new Uint8Array(await recording.blob.arrayBuffer())) });
         }
         return JSON.stringify({ version: 1, midi: base64(midiBytes), sources, parts: checkedParts,
-            tags: checkedTags, controls: checkedControls });
+            tags: checkedTags, controls: checkedControls, pitchEdits: checkedEdits });
     }
     function decodeProject(text) {
         if (typeof text !== 'string' || text.length > 135 * 1024 * 1024) throw Error('Oversized project');
@@ -115,7 +130,8 @@
         const midiBytes = unbase64(project.midi, MAX_MIDI);
         if (!midiBytes.length) throw Error('Missing score MIDI');
         return { midiBytes, recordings, parts: checkParts(project.parts, recordings.length),
-            tags: checkTags(project.tags, recordings.length), controls: checkControls(project.controls) };
+            tags: checkTags(project.tags, recordings.length), controls: checkControls(project.controls),
+            pitchEdits: checkPitchEdits(project.pitchEdits ?? []) };
     }
     return { encodeProject, decodeProject };
 });

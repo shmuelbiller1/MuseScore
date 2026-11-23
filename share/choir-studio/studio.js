@@ -6,9 +6,18 @@
     'use strict';
     const $ = id => document.getElementById(id), names = ['Soprano', 'Alto', 'Tenor', 'Bass'];
     const rate = 24000, recordings = [], assignments = [], Studio = window.ChoirStudio, Project = window.ChoirProject;
-    const tags = Object.create(null);
-    let score, midiBytes, context, mediaRecorder, micStream, processedUrl, recordPending = false, renderPending = false, revision = 0;
-    let tagPage = 0, selectedNote = 0, waveDrag = null, projectPending = false;
+    const tags = Object.create(null), pitchEdits = Object.create(null);
+    let score, midiBytes, context, mediaRecorder, micStream, processedUrl, previewUrl;
+    let recordPending = false, renderPending = false, revision = 0;
+    let tagPage = 0, selectedNote = 0, waveDrag = null, projectPending = false, previewPending = false;
+    const keyNames = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+    for (const selector of ['keyFrom', 'keyTo']) {
+        for (const mode of ['major', 'minor']) for (let tonic = 0; tonic < 12; ++tonic) {
+            const opt = document.createElement('option'); opt.value = `${tonic}:${mode}`;
+            opt.textContent = `${keyNames[tonic]} ${mode}`; $(selector).append(opt);
+        }
+        $(selector).value = '0:major';
+    }
     function invalidateProcessed() {
         ++revision;
         if (processedUrl) {
@@ -16,6 +25,10 @@
             URL.revokeObjectURL(processedUrl); processedUrl = undefined;
         }
         $('listen').disabled = $('download').disabled = true;
+        if (previewUrl) {
+            $('processedTagPlayer').pause(); $('processedTagPlayer').src = '';
+            URL.revokeObjectURL(previewUrl); previewUrl = undefined;
+        }
     }
     async function audio() { if (!context) context = new AudioContext({ sampleRate: rate }); await context.resume(); return context; }
     const status = text => { $('status').textContent = text; };
@@ -131,6 +144,7 @@
             const parsed = Studio.parseMidi(bytes);
             invalidateProcessed(); score = parsed; midiBytes = bytes;
             for (const key of Object.keys(tags)) delete tags[key];
+            for (const key of Object.keys(pitchEdits)) delete pitchEdits[key];
             tagPage = selectedNote = 0;
             const available = Studio.noteTrackIndices(score);
             // A tempo-only conductor track must not duplicate Soprano/Alto.
@@ -190,7 +204,10 @@
                         part.sourceHz = part.cropStart = part.cropEnd = 0;
                         refresh();
                     }
-                } else part[field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value);
+                } else {
+                    part[field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value);
+                    if (field === 'track') { tagPage = selectedNote = 0; updateTags(); }
+                }
             };
             parent.append(card);
         });
@@ -248,9 +265,50 @@
         const track = mode === 'choir' ? part?.track : Number($('melodyTrack').value);
         const recording = mode === 'choir' ? part?.recording : Number($('commonSource').value);
         const source = recordings[recording], notes = score?.tracks[track]?.notes;
-        return source && notes?.length ? { track, recording, source, notes, name: part.name } : null;
+        return source && notes?.length ? { track, recording, source, notes, name: part.name, part, voiceIndex: i } : null;
     }
     const tagKey = (track, recording) => `${track}:${recording}`;
+    const pitchKey = (track, noteIndex) => `${track}:${noteIndex}`;
+    const transpose = () => Studio.keySemitones($('keyFrom').value, $('keyTo').value, Number($('keyOctaves').value));
+    const preferFlats = () => ['7:minor', '2:minor', '0:minor', '5:minor', '10:minor', '3:minor',
+        '1:major', '3:major', '5:major', '8:major', '10:major'].includes($('keyTo').value);
+    function showKeyGuide() {
+        try {
+            const shift = transpose(), target = $('keyTo').value, tonic = Number(target.split(':')[0]);
+            const degrees = target.endsWith(':minor') ? [0, 2, 3, 5, 7, 8, 10] : [0, 2, 4, 5, 7, 9, 11];
+            const guide = degrees.map(d => Studio.noteName(60 + tonic + d, preferFlats()).replace(/\d+$/, '')).join(' · ');
+            $('transposeInfo').textContent = `Global pitch shift ${shift >= 0 ? '+' : ''}${shift} semitones. ${keyNames[tonic]} ${target.split(':')[1]} guide: ${guide}. Original MIDI unchanged.`;
+            return shift;
+        } catch (err) { $('transposeInfo').textContent = err.message; return 0; }
+    }
+    const pitchLabel = value => value >= 0 && value <= 127 ? Studio.noteName(value, preferFlats()) : `MIDI ${value} (unsupported)`;
+    function drawScoreTimeline(target, shift) {
+        const canvas = $('scoreWave'), ctx = canvas.getContext?.('2d');
+        if (!ctx) return;
+        const { width, height } = canvas; ctx.clearRect(0, 0, width, height);
+        if (!target) return;
+        const notes = target.notes, first = tagPage * 20, last = Math.min(notes.length, first + 20);
+        const from = notes[first].startSeconds, length = Math.max(0.1, notes[last - 1].endSeconds - from);
+        for (let i = first; i < last; ++i) {
+            const note = notes[i], pitch = note.pitch + shift + (pitchEdits[pitchKey(target.track, i)] || 0);
+            const x = (note.startSeconds - from) / length * width, w = Math.max(2, (note.endSeconds - note.startSeconds) / length * width);
+            const y = Math.max(3, Math.min(height - 19, height - 26 - (pitch - 60) * 1.4));
+            ctx.fillStyle = i === selectedNote ? '#ffbf69' : Studio.inKey(pitch, $('keyTo').value) ? '#8adc98' : '#c4a0e3';
+            ctx.fillRect(x, y, w, 18);
+            if (w > 32) { ctx.fillStyle = '#101826'; ctx.font = '12px sans-serif';
+                ctx.fillText(pitchLabel(pitch), x + 3, y + 13); }
+        }
+    }
+    function showSelectedNote(target, shift) {
+        if (!target) { $('noteLink').textContent = 'Choose a score note to inspect its linked source range.'; return; }
+        const note = target.notes[selectedNote], mark = tags[tagKey(target.track, target.recording)]?.[selectedNote];
+        const pitch = note.pitch + shift + (pitchEdits[pitchKey(target.track, selectedNote)] || 0);
+        const stretch = mark ? (note.endSeconds - note.startSeconds) / (mark.end - mark.start) : null;
+        $('noteLink').textContent = `Note ${selectedNote + 1}: written ${pitchLabel(note.pitch)} → output ${pitchLabel(pitch)}`
+            + ` at score ${note.startSeconds.toFixed(2)}–${note.endSeconds.toFixed(2)} s; `
+            + (mark ? `recording ${mark.start.toFixed(2)}–${mark.end.toFixed(2)} s fitted ${stretch.toFixed(2)}×.`
+                : 'no source range tagged yet.');
+    }
     function drawWaveform(target) {
         const canvas = $('tagWave'), ctx = canvas.getContext?.('2d');
         if (!ctx) return; // DOM test stand-in or browser without canvas
@@ -276,14 +334,55 @@
             ctx.fillRect(x, 0, right - x, height);
         }
     }
+    async function previewProcessedNote(target, index) {
+        if (previewPending) return;
+        previewPending = true;
+        try {
+            const current = tagTarget();
+            if (!current || current.track !== target.track || current.recording !== target.recording) {
+                throw Error('The selected part changed; select its note again');
+            }
+            const note = target.notes[index], duration = note.endSeconds - note.startSeconds;
+            if (duration <= 0 || duration > 30) throw Error('Preview supports written notes up to 30 seconds');
+            const shift = transpose(), delta = pitchEdits[pitchKey(target.track, index)] || 0;
+            const part = { ...target.part, track: 0, recording: 0, solo: false, mute: false,
+                transposeSemitones: shift, pitchDeltas: [delta] };
+            if (target.part.recording !== target.recording) part.sourceHz = part.cropStart = part.cropEnd = 0;
+            if ($('phraseMode').checked) {
+                const tag = tags[tagKey(target.track, target.recording)]?.[index];
+                if (!tag) throw Error('Tag this written note first, then audition the pitch and stretch');
+                part.noteTags = [{ ...tag }];
+            }
+            const previewScore = { tracks: [{ notes: [{ ...note, startSeconds: 0, endSeconds: duration }] }] };
+            const version = revision;
+            status(`Processing note ${index + 1} locally…`);
+            const mix = await Studio.renderAsync(previewScore, [part], [target.source], rate, Math.max(1, duration + 0.1));
+            if (version !== revision) throw Error('Settings changed during note preview; try again');
+            if (mix.peak < 0.001) throw Error('Processed note is silent; check the tagged source');
+            const player = $('processedTagPlayer'); player.pause();
+            if (previewUrl) URL.revokeObjectURL(previewUrl);
+            previewUrl = URL.createObjectURL(new Blob([Studio.wav([mix.left, mix.right], rate)], { type: 'audio/wav' }));
+            player.src = previewUrl;
+            let autoPlayed = true;
+            try { await player.play(); } catch { autoPlayed = false; }
+            if (version !== revision) { status('Preview canceled after settings changed.'); return; }
+            const output = Studio.outputPitch(note, part, 0), mark = part.noteTags?.[0];
+            $('previewInfo').textContent = `Note ${index + 1}: ${pitchLabel(note.pitch)} → ${pitchLabel(output)}, ${duration.toFixed(2)} s at score tempo`
+                + (mark ? ` from ${mark.start.toFixed(2)}–${mark.end.toFixed(2)} s source (${(duration / (mark.end - mark.start)).toFixed(2)}× fit).` : '.')
+                + (Studio.inKey(output, $('keyTo').value) ? ' In target-key guide.' : ' Chromatic: outside target-key guide.');
+            status(autoPlayed ? 'Playing the processed note.' : 'Processed note ready: press Play on the preview audio control.');
+            warning(mix.warnings.join('\n') || 'Audition the processed note against the unchanged source; note-preview F0 is not a naturalness test.');
+        } catch (err) { warning(err.message); }
+        finally { previewPending = false; }
+    }
     function updateTags() {
-        const mode = $('arrangementMode').value;
+        const shift = showKeyGuide(), mode = $('arrangementMode').value;
         $('tagVoice').disabled = mode !== 'choir';
         if (mode === 'solo') $('tagVoice').value = $('soloVoice').value;
         if (mode === 'unison') $('tagVoice').value = '0';
         const target = tagTarget(), rows = $('tagRows'); rows.replaceChildren();
         if (!target) { $('tagInfo').textContent = 'Load a MIDI and recording, then choose a written part to tag.';
-            $('tagPageInfo').textContent = ''; drawWaveform(null); return; }
+            $('tagPageInfo').textContent = ''; drawWaveform(null); drawScoreTimeline(null, shift); showSelectedNote(null, shift); return; }
         const { track, recording, source, notes, name } = target, key = tagKey(track, recording);
         const marks = tags[key] || [], missing = notes.reduce((n, _, i) => n + (!marks[i] ? 1 : 0), 0);
         tagPage = Math.min(tagPage, Math.floor((notes.length - 1) / 20));
@@ -302,9 +401,33 @@
                     $('waveStart').value = Math.max(0, +(marks[i].start - 0.3).toFixed(2));
                     $('waveEnd').value = Math.min(source.samples.length / rate, +(marks[i].end + 0.3).toFixed(2));
                 }
-                drawWaveform(target);
+                drawWaveform(target); drawScoreTimeline(target, shift); showSelectedNote(target, shift);
             };
             row.append(select);
+            const targetPitch = note.pitch + shift + (pitchEdits[pitchKey(track, i)] || 0);
+            const pitchSelect = document.createElement('select'); pitchSelect.dataset.pitchIndex = String(i);
+            for (let p = 36; p <= 88; ++p) {
+                const option = document.createElement('option'); option.value = String(p);
+                option.textContent = `${pitchLabel(p)} (MIDI ${p})${Studio.inKey(p, $('keyTo').value) ? '' : ' · chromatic'}`;
+                pitchSelect.append(option);
+            }
+            if (targetPitch < 36 || targetPitch > 88) {
+                const option = document.createElement('option'); option.value = String(targetPitch);
+                option.textContent = `${pitchLabel(targetPitch)} (outside recommended range)`; pitchSelect.append(option);
+            }
+            pitchSelect.value = String(targetPitch);
+            pitchSelect.onchange = () => {
+                const delta = Number(pitchSelect.value) - note.pitch - shift;
+                if (!Number.isInteger(delta) || Math.abs(delta) > 24) {
+                    updateTags(); return warning('A single note may move at most 24 semitones. Choose a closer note or change the global key.');
+                }
+                if (delta) pitchEdits[pitchKey(track, i)] = delta;
+                else delete pitchEdits[pitchKey(track, i)];
+                invalidateProcessed(); updateTags();
+            };
+            const pitchLabelElement = document.createElement('label');
+            pitchLabelElement.textContent = `Output ${pitchLabel(targetPitch)} (written ${pitchLabel(note.pitch)})`;
+            pitchLabelElement.append(pitchSelect); row.append(pitchLabelElement);
             const inputs = {};
             for (const [field, label] of [['start', 'Source from'], ['end', 'Source to'], ['hz', 'Hz (0 auto)']]) {
                 const input = document.createElement('input'); input.type = 'number'; input.step = 0.001; input.min = 0;
@@ -312,7 +435,8 @@
                 input.dataset.tagField = field; input.dataset.noteIndex = i;
                 const wrapper = document.createElement('label'); wrapper.textContent = label; wrapper.append(input); row.append(wrapper); inputs[field] = input;
             }
-            row.onchange = () => {
+            row.onchange = event => {
+                if (event?.target?.dataset?.pitchIndex !== undefined) return;
                 if (inputs.start.value === '' || inputs.end.value === '') return;
                 const start = Number(inputs.start.value), end = Number(inputs.end.value), hz = Number(inputs.hz.value);
                 if (!(Number.isFinite(start) && Number.isFinite(end) && Number.isFinite(hz)
@@ -351,11 +475,19 @@
                     await player.play();
                 } catch (err) { warning(err.message); }
             };
-            row.append(preview); rows.append(row);
+            row.append(preview);
+            const processed = document.createElement('button'); processed.textContent = 'Hear pitched + stretched note';
+            processed.onclick = () => previewProcessedNote(target, i);
+            row.append(processed); rows.append(row);
         }
-        drawWaveform(target);
+        drawWaveform(target); drawScoreTimeline(target, shift); showSelectedNote(target, shift);
     }
     $('tagVoice').onchange = () => { tagPage = selectedNote = 0; updateTags(); };
+    for (const selector of ['keyFrom', 'keyTo', 'keyOctaves']) $(selector).onchange = () => { invalidateProcessed(); updateTags(); };
+    $('quickGMinor').onclick = () => {
+        $('keyFrom').value = '9:minor'; $('keyTo').value = '7:minor'; $('keyOctaves').value = '0';
+        invalidateProcessed(); updateTags();
+    };
     $('phraseMode').onchange = invalidateProcessed;
     $('melodyTrack').onchange = () => { invalidateProcessed(); tagPage = selectedNote = 0; updateTags(); };
     $('waveStart').onchange = $('waveEnd').onchange = () => drawWaveform(tagTarget());
@@ -370,6 +502,26 @@
     $('clearTags').onclick = () => {
         const target = tagTarget(); if (!target) return;
         delete tags[tagKey(target.track, target.recording)]; invalidateProcessed(); updateTags();
+    };
+    const scoreCanvas = $('scoreWave');
+    scoreCanvas.onpointerdown = event => {
+        const target = tagTarget(); if (!target) return;
+        const rect = scoreCanvas.getBoundingClientRect(); if (!rect.width) return;
+        const first = tagPage * 20, last = Math.min(target.notes.length, first + 20);
+        const from = target.notes[first].startSeconds, length = Math.max(0.1, target.notes[last - 1].endSeconds - from);
+        const at = from + Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * length;
+        let best = first, distance = Infinity;
+        for (let i = first; i < last; ++i) {
+            const note = target.notes[i], d = Math.max(note.startSeconds - at, 0, at - note.endSeconds);
+            if (d < distance) { distance = d; best = i; }
+        }
+        selectedNote = best;
+        const mark = tags[tagKey(target.track, target.recording)]?.[best];
+        if (mark) {
+            $('waveStart').value = Math.max(0, +(mark.start - 0.3).toFixed(2));
+            $('waveEnd').value = Math.min(target.source.samples.length / rate, +(mark.end + 0.3).toFixed(2));
+        }
+        updateTags();
     };
     const canvas = $('tagWave');
     canvas.onpointerdown = event => {
@@ -403,6 +555,11 @@
             const mode = $('arrangementMode').value;
             const partSnapshot = Studio.arrangeParts(mode, score, assignments,
                 Number($('commonSource').value), Number($('melodyTrack').value), Number($('soloVoice').value));
+            const shift = transpose();
+            for (const part of partSnapshot) {
+                part.transposeSemitones = shift;
+                part.pitchDeltas = score.tracks[part.track].notes.map((_, i) => pitchEdits[pitchKey(part.track, i)] || 0);
+            }
             if ($('phraseMode').checked) {
                 for (const part of partSnapshot) {
                     if (part.mute || (partSnapshot.some(p => p.solo) && !part.solo)) continue;
@@ -434,11 +591,14 @@
             if (!midiBytes || !recordings.length) throw Error('Load a MIDI and at least one recording before saving');
             const controls = { mode: $('arrangementMode').value, melodyTrack: Number($('melodyTrack').value),
                 commonSource: Number($('commonSource').value), soloVoice: Number($('soloVoice').value),
-                tagVoice: Number($('tagVoice').value), phraseMode: $('phraseMode').checked };
+                tagVoice: Number($('tagVoice').value), phraseMode: $('phraseMode').checked,
+                sourceKey: $('keyFrom').value, targetKey: $('keyTo').value, octaves: Number($('keyOctaves').value) };
+            transpose(); // Do not save an impossible major ↔ minor transposition as a valid performance.
             const saveRevision = revision;
             const json = await Project.encodeProject({ midiBytes: midiBytes.slice(), recordings: recordings.slice(),
                 parts: assignments.map(part => ({ ...part })), tags: Object.entries(tags).map(([key, marks]) =>
-                    [key, marks.map(mark => mark && { ...mark })]), controls });
+                    [key, marks.map(mark => mark && { ...mark })]), controls,
+                pitchEdits: Object.entries(pitchEdits) });
             if (saveRevision !== revision) throw Error('Settings changed while saving; save again');
             const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
             const link = document.createElement('a'); link.href = url; link.download = 'personal-voice-choir.choir.json'; link.click();
@@ -457,6 +617,11 @@
             if (!file || file.size > 135 * 1024 * 1024) throw Error('Choose a choir session under 135 MB');
             const saved = Project.decodeProject(await file.text()), parsed = Studio.parseMidi(saved.midiBytes);
             const controls = saved.controls;
+            Studio.keySemitones(controls.sourceKey, controls.targetKey, controls.octaves);
+            for (const [key] of saved.pitchEdits) {
+                const [track, index] = key.split(':').map(Number);
+                if (!parsed.tracks[track]?.notes[index]) throw Error('Saved pitch edit references missing written note');
+            }
             if (!parsed.tracks[controls.melodyTrack]?.notes.length || controls.commonSource < 0
                 || controls.commonSource >= saved.recordings.length || controls.soloVoice < 0 || controls.soloVoice > 3
                 || controls.tagVoice < 0 || controls.tagVoice > 3) throw Error('Saved session references missing score or voice');
@@ -475,11 +640,13 @@
             recordings.forEach(r => URL.revokeObjectURL(r.url));
             recordings.length = 0; assignments.length = 0;
             for (const key of Object.keys(tags)) delete tags[key];
+            for (const key of Object.keys(pitchEdits)) delete pitchEdits[key];
             $('originalChoice').replaceChildren(); $('commonSource').replaceChildren();
             score = parsed; midiBytes = saved.midiBytes;
             for (const record of staged) registerRecording(record);
             assignments.splice(0, assignments.length, ...saved.parts);
             for (const [key, marks] of saved.tags) tags[key] = marks;
+            for (const [key, delta] of saved.pitchEdits) pitchEdits[key] = delta;
             const melody = $('melodyTrack'); melody.replaceChildren();
             Studio.noteTrackIndices(score).forEach(i => {
                 const option = document.createElement('option'); option.value = i;
@@ -488,6 +655,8 @@
             $('arrangementMode').value = controls.mode; melody.value = String(controls.melodyTrack);
             $('commonSource').value = String(controls.commonSource); $('soloVoice').value = String(controls.soloVoice);
             $('tagVoice').value = String(controls.tagVoice); $('phraseMode').checked = controls.phraseMode;
+            $('keyFrom').value = controls.sourceKey; $('keyTo').value = controls.targetKey;
+            $('keyOctaves').value = String(controls.octaves);
             $('scoreInfo').textContent = `Restored ${score.tracks.length} MIDI tracks with original audio and note tags from local session.`;
             tagPage = selectedNote = 0;
             $('waveStart').value = 0; $('waveEnd').value = Math.min(5, staged[controls.commonSource].samples.length / rate);

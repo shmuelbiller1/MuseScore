@@ -84,6 +84,15 @@ function onePartMidi() {
     return reduced;
 }
 
+function findPitchControl(root, index) {
+    if (root.dataset?.pitchIndex === String(index)) return root;
+    for (const node of root.children || []) {
+        const found = findPitchControl(node, index);
+        if (found) return found;
+    }
+    return undefined;
+}
+
 function findByTagField(root, field) {
     if (root.dataset?.tagField === field) return root;
     for (const node of root.children || []) {
@@ -275,6 +284,25 @@ test('tagged singing mode maps source ranges to notes and saves a self-contained
     assert.equal(findByTagField(restored.$('tagRows').children[0], 'start').value, 0.02);
 });
 
+test('changing the selected SATB track refreshes note rows so edits cannot target the old track', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'take.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    const mode = ui.$('arrangementMode'); mode.value = 'choir'; mode.onchange();
+    assert.match(ui.$('tagInfo').textContent, /track 2/);
+    const card = ui.$('parts').children[0], track = findByField(card, 'track');
+    track.value = '2'; card.onchange({ target: track });
+    assert.match(ui.$('tagInfo').textContent, /track 3/);
+    const row = ui.$('tagRows').children[0];
+    findByTagField(row, 'start').value = '0.1'; findByTagField(row, 'end').value = '0.4'; row.onchange();
+    await ui.$('saveProject').onclick();
+    const fileSaved = ui.urls.find(u => u.url === ui.downloads.at(-1).url).blob;
+    const project = Project.decodeProject(await fileSaved.text());
+    assert.deepEqual(project.tags.map(t => t[0]), ['2:0']);
+});
+
 test('waveform drag and move controls place a source segment under the selected written note', async () => {
     const ui = page();
     await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
@@ -319,6 +347,52 @@ test('one imported take can be tagged separately for all four independent SATB s
     assert.equal(restored.$('arrangementMode').value, 'choir');
     await restored.$('render').onclick();
     assert.equal(restored.$('listen').disabled, false, restored.$('warning').textContent);
+});
+
+test('hear original and processed tagged A4→B4, transpose A minor→G minor, and reopen pitch edits', async () => {
+    const samples = Float32Array.from({ length: 24000 }, (_, i) => 0.22 * Math.sin(2 * Math.PI * 440 * i / 24000));
+    const ui = page('audio/webm', samples);
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const original = new Blob([Studio.wav([samples], 24000)], { type: 'audio/wav' });
+    Object.assign(original, { name: 'A4 sung take.wav' });
+    await ui.$('wav').onchange({ target: { files: [original] } });
+    ui.$('phraseMode').checked = true; ui.$('phraseMode').onchange(); ui.$('fillTags').onclick();
+    const firstRow = ui.$('tagRows').children[0]; findByTagField(firstRow, 'end').value = '0.35'; firstRow.onchange();
+    ui.$('quickGMinor').onclick();
+    assert.match(ui.$('transposeInfo').textContent, /shift -2 semitones/);
+    assert.match(ui.$('transposeInfo').textContent, /B♭/);
+    const pitch = findPitchControl(ui.$('tagRows').children[0], 0);
+    pitch.value = '71'; pitch.onchange();
+    assert.match(ui.$('noteLink').textContent, /A4 → output B4/);
+    const row = ui.$('tagRows').children[0];
+    await row.children.find(child => child.textContent === 'Hear tagged source').onclick();
+    assert.equal(ui.$('tagPlayer').currentTime, 0);
+    await row.children.find(child => child.textContent === 'Hear pitched + stretched note').onclick();
+    assert.match(ui.$('previewInfo').textContent, /A4 → B4/);
+    assert.match(ui.$('previewInfo').textContent, /Chromatic: outside target-key guide/);
+    const audio = ui.urls.find(u => u.url === ui.$('processedTagPlayer').src).blob;
+    const view = new DataView(await audio.arrayBuffer()), left = new Float32Array((view.byteLength - 44) / 4);
+    for (let i = 0; i < left.length; ++i) left[i] = view.getInt16(44 + 4 * i, true) / 32767;
+    const measured = Studio.estimatePitch(left, 24000, 0.10);
+    assert.ok(Math.abs(measured - Studio.hz(71)) < 8, `processed note F0 ${measured}`);
+    const scoreCanvas = ui.$('scoreWave'); scoreCanvas.getBoundingClientRect = () => ({ left: 0, width: 900 });
+    scoreCanvas.onpointerdown({ clientX: 800 });
+    assert.match(ui.$('noteLink').textContent, /Note 2/);
+    await ui.$('saveProject').onclick();
+    const sessionBlob = ui.urls.find(u => u.url === ui.downloads.at(-1).url).blob;
+    const saved = Project.decodeProject(await sessionBlob.text());
+    assert.equal(saved.controls.sourceKey, '9:minor'); assert.equal(saved.controls.targetKey, '7:minor');
+    assert.deepEqual(saved.pitchEdits, [['1:0', 4]]);
+    assert.equal(Studio.parseMidi(saved.midiBytes).tracks[1].notes[0].pitch, 69);
+    const restored = page('audio/webm', samples);
+    await restored.$('openProject').onchange({ target: { files: [sessionBlob] } });
+    assert.equal(findPitchControl(restored.$('tagRows').children[0], 0).value, '71');
+    await restored.$('render').onclick();
+    assert.equal(restored.$('listen').disabled, false, restored.$('warning').textContent);
+    restored.$('keyFrom').value = '9:major'; restored.$('keyFrom').onchange();
+    assert.match(restored.$('transposeInfo').textContent, /Major-to-minor/);
+    await restored.$('render').onclick();
+    assert.match(restored.$('warning').textContent, /Major-to-minor/);
 });
 
 test('four imported source files map one-to-one in picker order', async () => {

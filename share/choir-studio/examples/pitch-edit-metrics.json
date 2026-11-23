@@ -1,0 +1,69 @@
+{
+  "methodology": "real CC BY 4.0 soprano vowel, manually tagged to two notes; measured sustained F0, not perceived singer quality",
+  "source": "vocalset/soprano-f1-long-a.wav; see vocalset/ATTRIBUTION.md",
+  "versions": [
+    {
+      "id": "A4-to-B4",
+      "description": "written A4 explicitly changed to B4; second written B4 unchanged",
+      "measurements": [
+        {
+          "note": 1,
+          "originalMidi": 69,
+          "outputMidi": 71,
+          "originalName": "A4",
+          "outputName": "B4",
+          "scoreStartSeconds": 0,
+          "targetHz": 493.88,
+          "measuredHz": 493.02,
+          "errorCents": -3
+        },
+        {
+          "note": 2,
+          "originalMidi": 71,
+          "outputMidi": 71,
+          "originalName": "B4",
+          "outputName": "B4",
+          "scoreStartSeconds": 0.625,
+          "targetHz": 493.88,
+          "measuredHz": 493.21,
+          "errorCents": -2.4
+        }
+      ],
+      "warnings": [
+        "Soprano note 1: explicit pitch edit A4 → B4 (original MIDI unchanged)."
+      ]
+    },
+    {
+      "id": "A-minor-to-G-minor",
+      "description": "same-mode global transposition −2 semitones: A4→G4, B4→A4",
+      "measurements": [
+        {
+          "note": 1,
+          "originalMidi": 69,
+          "outputMidi": 67,
+          "originalName": "A4",
+          "outputName": "G4",
+          "scoreStartSeconds": 0,
+          "targetHz": 392,
+          "measuredHz": 391.63,
+          "errorCents": -1.6
+        },
+        {
+          "note": 2,
+          "originalMidi": 71,
+          "outputMidi": 69,
+          "originalName": "B4",
+          "outputName": "A4",
+          "scoreStartSeconds": 0.625,
+          "targetHz": 440,
+          "measuredHz": 440.52,
+          "errorCents": 2.1
+        }
+      ],
+      "warnings": [
+        "Soprano note 1: explicit pitch edit A4 → G4 (original MIDI unchanged).",
+        "Soprano note 2: explicit pitch edit B4 → A4 (original MIDI unchanged)."
+      ]
+    }
+  ]
+}
