@@ -383,7 +383,9 @@
             const note = target.notes[index], duration = note.endSeconds - note.startSeconds;
             if (duration <= 0 || duration > 30) throw Error('Preview supports written notes up to 30 seconds');
             const shift = transpose(), delta = pitchEdits[pitchKey(target.track, index)] || 0;
-            const part = { ...target.part, track: 0, recording: 0, solo: false, mute: false,
+            // An explicit solo may use a character disabled in the written-part mix.
+            // Its isolated note audition must follow the same solo override.
+            const part = { ...target.part, track: 0, recording: 0, enabled: true, solo: false, mute: false,
                 transposeSemitones: shift, pitchDeltas: [delta] };
             if (target.part.recording !== target.recording) part.sourceHz = part.cropStart = part.cropEnd = 0;
             if ($('phraseMode').checked) {

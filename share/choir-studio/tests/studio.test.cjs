@@ -213,6 +213,23 @@ test('each of the other three written-part choices renders its own one-track MID
     }
 });
 
+test('explicit solo note preview still works after a different written part was selected', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const source = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(source, { name: 'solo-source.wav' });
+    await ui.$('wav').onchange({ target: { files: [source] } });
+    ui.$('selectBass').onclick();
+    assert.equal(findByField(ui.$('parts').children[0], 'enabled').checked, false);
+    ui.$('arrangementMode').value = 'solo'; ui.$('arrangementMode').onchange();
+    ui.$('soloVoice').value = '0'; ui.$('soloVoice').onchange();
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+    await ui.$('tagRows').children[0].children.find(c => c.textContent === 'Hear pitched + stretched note').onclick();
+    assert.match(ui.$('previewInfo').textContent, /A4 → A4/);
+    assert.ok(ui.$('processedTagPlayer').src, ui.$('warning').textContent);
+});
+
 test('custom Alto + Bass selection needs tags only on those two written parts', async () => {
     const ui = page();
     await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
