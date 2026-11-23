@@ -1,0 +1,35 @@
+# Personal Voice Choir Studio — experimental offline sidecar
+
+**Status: proof of concept, not a finished in-app choir instrument.** No claim of realistic voices. Source recordings from human singers have **not** been auditioned or evaluated against processed results. The committed examples are synthetic harmonic test signals, not human voices. This experimental sidecar deliberately avoids modifying MuseScore's audio engine, mixer, score or project storage until sound quality and score-event fidelity can be evaluated.
+
+## Run offline
+
+1. In MuseScore, open a four-part score and export a **MIDI** file (File → Export → MIDI). Ensure the four parts have their own MIDI tracks. If playback-dependent details matter, audition the exported MIDI: this tool uses the MIDI's note-on/off, velocity, and tempo events as its sole timing/pitch authority, **not** the live score renderer. Some engraving semantics (fermata duration, articulation, historically marked dynamics) may be lost or simplified by MIDI export. This tool does not promise to preserve them beyond what MuseScore exports.
+2. In the portable Windows ZIP, extract it and choose **Help → Personal Voice Choir Studio (experimental)…** in MuseScore. This opens the bundled `App/MuseScore/choir-studio/index.html` in your default browser. Alternatively open that file directly; from a source checkout, open `share/choir-studio/index.html`. No server, install, account, internet access, models or remote assets are required. Microphone capture requires browser permission and a secure context; if denied, import a WAV. No data is transmitted by this page.
+3. Record a clear, steady **vowel** or import your own WAV (under 90 seconds). Choose the recorded vowel's start/end in each part, or enter its measured source Hz if auto-detection fails. Import or record several source vowels for different registers when possible. You can listen to and save the unchanged original separately from processed output. In-memory session data is cleared when you close/reload the page; save recordings you wish to keep.
+4. Load the exported `.mid` file; assign **four different MIDI note tracks** to Soprano, Alto, Tenor and Bass. Each has independent source recording, pitch correction, nominal formant, brightness/warmth/breathiness/resonance/strength, volume/pan, variation, mute and solo. A 100% correction target matches the MIDI pitch approximately; below 100% is intentionally expressive **and no longer guarantees written pitch**. To maintain exact intended pitch choose 100%. The formant control is an approximate spectral shaping parameter, **not independent measured formant tracking**. Bass uses its own note events, not transposed soprano notes.
+5. Render up to the first 30 seconds, listen against the original and download a 24 kHz stereo WAV. When the output-to-source pitch ratio exceeds 1.7 or is below 0.59, use a closer-register recording. Warnings do not mean the result will sound natural within the range. This renderer cannot produce lyrics or trained vocal identities. Playback and export are performed entirely in browser memory; the processed WAV is not injected into MuseScore playback or stored with a project.
+
+The renderer uses a small, deterministic period-synchronous overlap-add grain process and simple filters. Grain spacing targets written F0 while source grains play at their original sample rate. Unlike a full PSOLA implementation, it does **not** locate glottal epochs, handle consonants, de-ess or track time-varying formants. It can phase, buzz, sound synthetic, or shift pitch at attacks, and estimates a *single* steady source F0. Synthetic tests establish approximate sustained-note pitch, timing, non-silence, mute/solo and output-byte determinism; they do not establish perceptual quality. Playback of rapid tempo transitions and very short notes has not been perceptually validated.
+
+## Why not bundle a third-party processor or vocal model?
+
+The following upstream primary sources were read in November 2026; none of these components is included here. Licensing and Windows feasibility alone cannot establish expressive quality.
+
+| Approach | Verified terms & Windows evidence | Quality and resource tradeoff |
+| --- | --- | --- |
+| [Rubber Band Library](https://github.com/breakfastquay/rubberband/blob/master/README.md) | Its README states GPL version 2 **or later** (compatible in principle with this GPLv3 application when using that option), or commercial licensing; its [build guide](https://github.com/breakfastquay/rubberband/blob/master/COMPILING.md) documents Windows builds and a single-file built-in FFT/resampler option. Other FFT/backends have separate license obligations. | Offline professional time stretch/pitch shift option; **independent formant shifting and convincing choir output have not been verified here**. Native library adds build and CPU cost. |
+| [aubio](https://github.com/aubio/aubio/blob/master/COPYING) | GPLv3 as indicated by its COPYING; its [README](https://github.com/aubio/aubio/blob/master/README.md) describes pitch analysis, phase vocoder and Windows AppVeyor. | Primarily analysis building blocks, not a turnkey singer; extra DSP implementation, FFT CPU and validation required. |
+| [JUCE framework](https://github.com/juce-framework/JUCE/blob/master/LICENSE.md) | Its LICENSE.md describes **AGPLv3 or commercial** terms, not a blanket GPLv3 grant. It describes a cross-platform desktop framework. | Framework overhead, not by itself a licensed singing model or a formant-preserving transform. Not selected; AGPL integration review would be required. |
+| Local browser-native PSOLA-like grains (implemented here) | This new source code is GPL-3.0-only like the project. Uses built-in browser Web Audio and MediaRecorder; no linked libraries, external samples or model assets. Browser support and local-file microphone permissions vary. | Low installation/asset cost; only a steady vowel and approximate spectrum; serious quality limitations and no real-recording evaluation. |
+
+The existing MS Basic soundfont licence does **not** license use of any third-party singer samples. No unverified model or recording is bundled. To upgrade to a reliable in-app voice instrument: test multiple consented real recordings across each register, measure pitch/error and consonant preservation, assess timbre blind with listeners, investigate a redistribution-compatible processor and Windows build, then implement a per-track event source through the existing audio-engine interfaces and project persistence. Do not treat this sidecar as a completed replacement.
+
+## Developer checks
+
+```sh
+node share/choir-studio/examples/generate.cjs  # regenerate the synthetic before/after WAV and MIDI
+node --test share/choir-studio/tests/choir.test.cjs
+```
+
+Windows portable CI runs the same tests and checks that the offline sidecar and examples are inside the extracted package. The portable verification script also checks MuseScore itself launches and exports a WAV with network blocked. This does **not** test microphone permission, browser UX or perceptual quality.

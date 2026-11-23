@@ -31,7 +31,12 @@ $exe = Join-Path $probe 'App\MuseScore\bin\MuseScoreStudio5.exe'
 $font = Join-Path $probe 'App\MuseScore\sound\MS Basic.sf3'
 $license = Join-Path $probe 'App\MuseScore\sound\MS Basic_License.md'
 $qt = Join-Path $probe 'App\MuseScore\bin\Qt6Core.dll'
-foreach ($required in @($launcher, $exe, $font, $license, $qt)) {
+$choir = Join-Path $probe 'App\MuseScore\choir-studio'
+foreach ($required in @($launcher, $exe, $font, $license, $qt,
+    (Join-Path $choir 'index.html'), (Join-Path $choir 'choir.js'),
+    (Join-Path $choir 'studio.js'), (Join-Path $choir 'README.md'),
+    (Join-Path $choir 'examples\four-independent-parts.mid'),
+    (Join-Path $choir 'examples\four-part-synthetic-mix.wav'))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing offline dependency: $required" }
 }
 if ((Get-Item $font).Length -lt 1000000) { throw 'Bundled MS Basic soundfont is too small.' }

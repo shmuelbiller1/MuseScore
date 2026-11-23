@@ -37,3 +37,13 @@ install (DIRECTORY
     DESTINATION ${MUSE_APP_INSTALL_RESOURCES_LOCATION}
     PATTERN ".*" EXCLUDE
     )
+
+# Offline experimental choir sidecar: open choir-studio/index.html in a
+# browser after exporting MIDI from the score. No runtime downloads or models.
+install (DIRECTORY
+    choir-studio
+    DESTINATION ${MUSE_APP_INSTALL_RESOURCES_LOCATION}
+    PATTERN "tests" EXCLUDE
+    PATTERN "generate.cjs" EXCLUDE
+    PATTERN ".*" EXCLUDE
+    )

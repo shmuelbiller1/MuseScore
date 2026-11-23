@@ -27,6 +27,8 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QFileOpenEvent>
+#include <QFileInfo>
+#include <QDir>
 #include <QWindow>
 #include <QMimeData>
 
@@ -80,6 +82,7 @@ void AppshellCommandsController::init()
     cd->onRequest(this, APP_ABOUT_QT_COMMAND, [this]() { openAboutQtDialog(); return muse::make_ok(); });
     cd->onRequest(this, APP_ABOUT_MUSICXML_COMMAND, [this]() { openAboutMusicXMLDialog(); return muse::make_ok(); });
     cd->onRequest(this, APP_ONLINE_HANDBOOK_COMMAND, [this]() { openOnlineHandbookPage(); return muse::make_ok(); });
+    cd->onRequest(this, APP_EXPERIMENTAL_CHOIR_COMMAND, [this]() { openExperimentalChoirPage(); return muse::make_ok(); });
     cd->onRequest(this, APP_ASK_HELP_COMMAND, [this]() { openAskForHelpPage(); return muse::make_ok(); });
 
     cd->onRequest(this, APP_ACCESSIBILITY_STATEMENT_COMMAND, [this]() { openAccessibilityStatementPage(); return muse::make_ok(); });
@@ -382,6 +385,15 @@ void AppshellCommandsController::openOnlineHandbookPage()
 {
     std::string handbookUrl = configuration()->handbookUrl();
     platformInteractive()->openUrl(handbookUrl);
+}
+
+void AppshellCommandsController::openExperimentalChoirPage()
+{
+    // Open only the installed local resource. Never fall back to a web URL.
+    const QString page = QDir(globalConfiguration()->appDataPath().toQString()).filePath("choir-studio/index.html");
+    if (QFileInfo::exists(page)) {
+        platformInteractive()->openUrl(QUrl::fromLocalFile(page));
+    }
 }
 
 void AppshellCommandsController::openAskForHelpPage()

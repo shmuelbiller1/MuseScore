@@ -32,6 +32,7 @@ inline static const muse::rcommand::Command APP_ABOUT_MUSESCORE_COMMAND("command
 inline static const muse::rcommand::Command APP_ABOUT_QT_COMMAND("command://app/about-qt");
 inline static const muse::rcommand::Command APP_ABOUT_MUSICXML_COMMAND("command://app/about-musicxml");
 inline static const muse::rcommand::Command APP_ONLINE_HANDBOOK_COMMAND("command://app/online-handbook");
+inline static const muse::rcommand::Command APP_EXPERIMENTAL_CHOIR_COMMAND("command://app/experimental-choir");
 inline static const muse::rcommand::Command APP_ASK_HELP_COMMAND("command://app/ask-help");
 inline static const muse::rcommand::Command APP_ACCESSIBILITY_STATEMENT_COMMAND("command://app/accessibility-statement");
 inline static const muse::rcommand::Command APP_PREFERENCES_COMMAND("command://app/preferences");

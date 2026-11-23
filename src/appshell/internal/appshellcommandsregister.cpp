@@ -91,6 +91,14 @@ static const std::vector<CommandInfo> s_commandInfos = {
         Availability::Internal
         ),
     CommandInfo(
+        APP_EXPERIMENTAL_CHOIR_COMMAND,
+        TranslatableString("action", "Personal Voice Choir Studio (experimental)…"),
+        TranslatableString("action", "Open the offline experimental choir studio in a browser"),
+        InputSchema(),
+        Decoration(),
+        Availability::Internal
+        ),
+    CommandInfo(
         APP_ASK_HELP_COMMAND,
         TranslatableString("action", "As&k for help"),
         TranslatableString("action", "Ask for help"),
