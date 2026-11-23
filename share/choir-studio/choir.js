@@ -129,6 +129,40 @@
         return rate / (best + offset);
     }
 
+    // Track a consistent voiced-waveform phase across the selected vowel.
+    // Using a fixed number of samples per input period drifts against real
+    // vibrato; local normalized correlation follows the singer instead.
+    function findEpochs(source, rate, sourceHz, options = {}) {
+        const start = Math.floor((options.cropStart || 0) * rate);
+        const end = Math.min(source.length, Math.floor((options.cropEnd || source.length / rate) * rate));
+        const period = rate / sourceHz;
+        if (end - start < 5 * period) throw Error('Select at least five source pitch periods');
+        const margin = Math.ceil(period * 1.5), radius = Math.max(2, Math.floor(period * 0.4));
+        const search = Math.max(2, Math.floor(period * 0.2));
+        let first = start + margin;
+        for (let at = first + 1; at < Math.min(end - margin, first + Math.floor(period)); ++at) {
+            if (Math.abs(source[at]) > Math.abs(source[first])) first = at;
+        }
+        const epochs = [first];
+        let last = first;
+        while (last + period + search < end - margin) {
+            const predicted = Math.round(last + period);
+            let best = predicted, bestScore = -Infinity;
+            for (let candidate = predicted - search; candidate <= predicted + search; ++candidate) {
+                let dot = 0, left = 0, right = 0;
+                for (let j = -radius; j <= radius; ++j) {
+                    const a = source[last + j], b = source[candidate + j];
+                    dot += a * b; left += a * a; right += b * b;
+                }
+                const score = dot / Math.sqrt(left * right + 1e-20) - 0.0002 * Math.abs(candidate - predicted);
+                if (score > bestScore) { bestScore = score; best = candidate; }
+            }
+            if (bestScore < 0.2) break; // stop at noise/unvoiced material
+            epochs.push(best); last = best;
+        }
+        return epochs;
+    }
+
     // Period-synchronous overlap-add. Output grain spacing sets the note's F0;
     // source grains stay at their original sampling rate, approximately
     // retaining their spectral envelope. This is NOT a trained voice model.
@@ -146,11 +180,11 @@
         // half-period window at the *target* F0 trades some vowel detail for
         // the requested score pitch; extreme shifts still sound synthetic.
         const grain = Math.max(2, Math.ceil(Math.min(period, spacing * 0.52)));
-        // Each new note starts at its own epoch; source epochs advance without
-        // changing the source sample rate. Wrapping stays inside the vowel crop.
+        // Input epochs follow the singer's changing waveform phase rather
+        // than a fixed period. Cache them across notes in renderSteps().
+        const epochs = options.epochs || findEpochs(source, rate, sourceHz, options);
         for (let outCenter = 0, n = 0; outCenter < frames + grain; outCenter += spacing, ++n) {
-            const safe = Math.floor((end - start - 4 * grain) / period);
-            const inCenter = start + 2 * grain + (n % Math.max(1, safe)) * period;
+            const inCenter = epochs[n % epochs.length];
             for (let j = -grain; j <= grain; ++j) {
                 const index = Math.round(outCenter + j);
                 if (index < 0 || index >= frames) continue;
@@ -214,6 +248,7 @@
             const source = recordings[part.recording], notes = score.tracks[part.track]?.notes;
             if (!notes) throw Error('Missing MIDI track for ' + part.name);
             const sourceHz = estimatePitch(source.samples, rate, part.cropStart || 0, part.sourceHz || 0, part.cropEnd || 0);
+            const noteOptions = { ...part, epochs: findEpochs(source.samples, rate, sourceHz, part) };
             const pan = clamp(part.pan ?? 0, -1, 1), volume = clamp(part.volume ?? 0.7, 0, 1);
             const gainL = Math.cos((pan + 1) * Math.PI / 4) * volume, gainR = Math.sin((pan + 1) * Math.PI / 4) * volume;
             for (const note of notes) {
@@ -222,7 +257,7 @@
                 if ((part.correction ?? 1) < 1) warnings.push(part.name + ': correction below 100% does not preserve the written pitch.');
                 const start = Math.round(note.startSeconds * rate), stop = Math.min(frames, Math.round(note.endSeconds * rate));
                 if (start >= frames || stop <= start) continue;
-                const raw = vowelNote(source.samples, rate, sourceHz, noteHz, stop - start, part);
+                const raw = vowelNote(source.samples, rate, sourceHz, noteHz, stop - start, noteOptions);
                 const voiced = shape(raw, rate, part, (partIndex + 1) * 941 + (part.variation ? note.tick : 0));
                 const fade = Math.max(1, Math.round(rate * 0.012));
                 for (let i = 0; i < voiced.length; ++i) {

@@ -7,11 +7,11 @@
 <h1>Personal Voice Choir Studio <small>experimental · offline</small></h1>
 <p>Use your own recording and a <strong>MIDI export of the same MuseScore score</strong>. Map its four distinct note tracks below. MIDI carries the score's performed tempo, rhythms, rests, note lengths and velocities; the recording supplies only timbre. This is an offline vowel-based proof of concept, <strong>not realistic singing or lyric/consonant synthesis</strong>. A wide pitch shift may sound unnatural.</p>
 <details><summary>Listen to the real-singer before/after example (CC BY 4.0)</summary>
-<section><p>Actual licensed VocalSet vowel recordings, not a synthetic test or a claim of realism. The original is just 80 ms; the processed soprano is a 0.5-second A4. Alto has a documented unnatural shift. <a href="examples/vocalset/ATTRIBUTION.md">Licence, source and changes</a>.</p>
-<label>Original soprano vowel<audio controls src="examples/vocalset/soprano-f1-a.wav"></audio></label>
-<label>Processed soprano vowel<audio controls src="examples/after-vocalset-soprano-A4.wav"></audio></label>
-<label>Four independent parts<audio controls src="examples/four-part-real-vowel-mix.wav"></audio></label>
-<p>To render it yourself, import the four files from <code>examples/vocalset/</code> and load <code>examples/four-independent-parts.mid</code>. Check the source-to-part assignment before rendering.</p></section></details>
+<section><p>Actual licensed VocalSet vowel excerpts, not a synthetic test or a claim of realism. The original is 0.8 seconds; the processed soprano is a 0.5-second A4. The demo uses four source registers, each with its own written notes, including bass A2. <a href="examples/vocalset/ATTRIBUTION.md">Licence, source and changes</a>.</p>
+<label>Original soprano vowel<audio controls src="examples/vocalset/soprano-f1-long-a.wav"></audio></label>
+<label>Processed soprano vowel<audio controls src="examples/after-long-soprano-A4.wav"></audio></label>
+<label>Four independent parts<audio controls src="examples/four-part-long-vowel-mix.wav"></audio></label>
+<p>To render it yourself, import the four <code>*-long-a.wav</code> files from <code>examples/vocalset/</code> and load <code>examples/four-independent-real-registers.mid</code>. Check the source-to-part assignment before rendering.</p></section></details>
 <section><h2>1 · Source recordings</h2>
 <label>Import WAV (mono or stereo)<input id="wav" type="file" accept=".wav,audio/wav" multiple></label>
 <button id="record">Record microphone</button><button id="stop" disabled>Stop recording</button>

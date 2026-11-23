@@ -14,8 +14,8 @@
       "sourceHz": 701.7,
       "midiPitch": 69,
       "targetHz": 440,
-      "measuredHz": 440.22,
-      "errorCents": 0.9,
+      "measuredHz": 439.16,
+      "errorCents": -3.3,
       "noteStartSeconds": 0,
       "noteEndSeconds": 0.25,
       "peak": 0.379
@@ -26,8 +26,8 @@
       "sourceHz": 709.55,
       "midiPitch": 64,
       "targetHz": 329.63,
-      "measuredHz": 329.47,
-      "errorCents": -0.8,
+      "measuredHz": 330.16,
+      "errorCents": 2.8,
       "noteStartSeconds": 0.125,
       "noteEndSeconds": 0.375,
       "peak": 0.322
@@ -38,11 +38,11 @@
       "sourceHz": 332.03,
       "midiPitch": 60,
       "targetHz": 261.63,
-      "measuredHz": 261.5,
-      "errorCents": -0.8,
+      "measuredHz": 261.44,
+      "errorCents": -1.3,
       "noteStartSeconds": 0.25,
       "noteEndSeconds": 0.5,
-      "peak": 0.344
+      "peak": 0.343
     },
     {
       "part": "Bass",
@@ -50,8 +50,8 @@
       "sourceHz": 260.28,
       "midiPitch": 57,
       "targetHz": 220,
-      "measuredHz": 219.91,
-      "errorCents": -0.7,
+      "measuredHz": 220.02,
+      "errorCents": 0.1,
       "noteStartSeconds": 0.375,
       "noteEndSeconds": 0.5625,
       "peak": 0.47

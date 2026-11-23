@@ -12,13 +12,13 @@ function source(frequency = 220, length = 0.65) {
 function v(n) { const bytes = [n & 127]; while ((n >>= 7)) bytes.unshift((n & 127) | 128); return bytes; }
 function be(n, width) { return Array.from({ length: width }, (_, i) => (n >>> (8 * (width - i - 1))) & 255); }
 function chunk(label, bytes) { return [...Buffer.from(label), ...be(bytes.length, 4), ...bytes]; }
-function midi() {
+function midi(pitches = [69, 64, 60, 57]) {
     const header = [...Buffer.from('MThd'), ...be(6, 4), ...be(1, 2), ...be(5, 2), ...be(480, 2)];
     const tempo = [0, 255, 81, 3, 7, 161, 32, ...v(480), 255, 81, 3, 3, 208, 144, 0, 255, 47, 0];
     const tracks = [chunk('MTrk', tempo)];
     // Distinct pitches, different onsets, independent note gates and rests.
     for (let part = 0; part < 4; ++part) {
-        const start = part * 120, pitch = [69, 64, 60, 57][part];
+        const start = part * 120, pitch = pitches[part];
         const name = Buffer.from(['Soprano', 'Alto', 'Tenor', 'Bass'][part]);
         const bytes = [0, 255, 3, name.length, ...name,
             ...v(start), 144, pitch, 85 - part * 8,
