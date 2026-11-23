@@ -147,9 +147,18 @@
             for (const key of Object.keys(pitchEdits)) delete pitchEdits[key];
             tagPage = selectedNote = 0;
             const available = Studio.noteTrackIndices(score);
-            // A tempo-only conductor track must not duplicate Soprano/Alto.
-            assignments.forEach((part, i) => { part.track = available[i] ?? -1; });
-            $('scoreInfo').textContent = `${score.tracks.length} MIDI tracks; ${available.length} contain notes. Solo/unison need one written part; SATB needs four. Tempo changes and rests follow the export.`;
+            // Recognize explicitly named SATB tracks before assigning unnamed
+            // leftovers. A one-track Bass export must never become Soprano.
+            const mapped = Array(4).fill(-1), used = new Set();
+            names.forEach((name, i) => {
+                const matches = available.filter(track => !used.has(track)
+                    && new RegExp(`\\b${name}\\b`, 'i').test(score.tracks[track].name));
+                if (matches.length === 1) { mapped[i] = matches[0]; used.add(matches[0]); }
+            });
+            const remaining = available.filter(track => !used.has(track));
+            names.forEach((_, i) => { if (mapped[i] < 0 && remaining.length) mapped[i] = remaining.shift(); });
+            assignments.forEach((part, i) => { part.track = mapped[i]; });
+            $('scoreInfo').textContent = `${score.tracks.length} MIDI tracks; ${available.length} contain notes. Named SATB tracks are mapped by name; check each assignment. Only included voices need a written track. Tempo and rests follow the export.`;
             const melody = $('melodyTrack'); melody.replaceChildren();
             available.forEach(i => { const option = document.createElement('option'); option.value = i;
                 option.textContent = `${i + 1}: ${score.tracks[i].name} (${score.tracks[i].notes.length} notes)`; melody.append(option); });
@@ -169,12 +178,15 @@
         names.forEach((name, index) => {
             const part = assignments[index] || { name, preset: name, track: index, recording: 0, volume: 0.7, pan: 0,
                 correction: 1, ...Studio.defaults[name], cropStart: 0, cropEnd: 0, sourceHz: 0, variation: false, mute: false, solo: false };
+            if (part.enabled === undefined) part.enabled = true; // earlier saved sessions included all four
             assignments[index] = part;
             const card = document.createElement('article'), heading = document.createElement('h3'); heading.textContent = name; card.append(heading);
             const labeled = (title, element) => { const label = document.createElement('label'); label.textContent = title; label.append(element); card.append(label); return element; };
             const track = document.createElement('select'); track.dataset.field = 'track';
+            const unassigned = document.createElement('option'); unassigned.value = '-1';
+            unassigned.textContent = '— no written track assigned —'; track.append(unassigned);
             (score?.tracks || []).forEach((t, i) => { if (t.notes.length) { const option = document.createElement('option'); option.value = i; option.textContent = `${i + 1}: ${t.name} (${t.notes.length} notes)`; track.append(option); } });
-            if (score && !score.tracks[part.track]?.notes.length) part.track = Number(track.options[index]?.value ?? -1);
+            // Keep a visible placeholder for parts that were not in the MIDI export.
             track.value = part.track; labeled('Written score track', track);
             const source = document.createElement('select'); source.dataset.field = 'recording'; recordings.forEach((r, i) => {
                 const opt = document.createElement('option'); opt.value = i; opt.textContent = r.name; source.append(opt);
@@ -188,8 +200,9 @@
             for (const [label, key] of [['Source Hz (0 = detect)', 'sourceHz'], ['Vowel start (seconds)', 'cropStart'], ['Vowel end (0 = end)', 'cropEnd']]) {
                 const input = document.createElement('input'); input.type = 'number'; input.min = 0; input.step = 0.01; input.value = part[key]; input.dataset.field = key; input.style.width = '95px'; labeled(label, input);
             }
-            for (const key of ['variation', 'solo', 'mute']) {
-                const input = document.createElement('input'); input.type = 'checkbox'; input.checked = part[key]; input.dataset.field = key; labeled(key, input);
+            for (const key of ['enabled', 'variation', 'solo', 'mute']) {
+                const input = document.createElement('input'); input.type = 'checkbox'; input.checked = part[key]; input.dataset.field = key;
+                labeled(key === 'enabled' ? 'Include this part in the mix' : key, input);
             }
             card.onchange = event => {
                 const { field } = event.target.dataset; if (!field) return;
@@ -207,6 +220,14 @@
                 } else {
                     part[field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value);
                     if (field === 'track') { tagPage = selectedNote = 0; updateTags(); }
+                    if (field === 'enabled') {
+                        if (!part.enabled && $('arrangementMode').value === 'choir'
+                            && Number($('tagVoice').value) === index) {
+                            const first = assignments.findIndex(p => p?.enabled !== false);
+                            if (first >= 0) { $('tagVoice').value = String(first); tagPage = selectedNote = 0; }
+                        }
+                        updateMode();
+                    }
                 }
             };
             parent.append(card);
@@ -219,10 +240,11 @@
         $('commonSource').disabled = false;
         $('assignAll').disabled = recordings.length === 0;
         $('soloVoice').disabled = !solo;
+        const included = assignments.filter(part => part?.enabled !== false).map(part => part.name).join(', ') || 'none';
         $('modeInfo').textContent = harmony
-            ? 'SATB harmony: assign four distinct written tracks below. You may reuse one recording, but different vocal characters cannot guarantee four realistic singers.'
-            : solo ? 'Solo: the chosen written track and recording play through one selected voice character. Other parts are not rendered.'
-                : 'Unison: all four characters follow the SAME written melody, not SATB harmony. Use SATB mode only after writing four independent parts.';
+            ? `Written-part mix: ${included}. Each audible included voice needs its own distinct note track (solo/mute can audition a subset). Bass-only uses Bass’s mapped written track, not a transposed soprano.`
+            : solo ? 'One-part solo: choose a written track, recording and one character above. The include checkboxes do not change this explicit solo.'
+                : `Unison: ${included} follow the SAME written melody, not SATB harmony. Toggle include to choose layers, or use written-part mode for different notes.`;
         document.querySelectorAll('#parts select[data-field="track"]').forEach(input => { input.disabled = !harmony; });
         document.querySelectorAll('#parts select[data-field="recording"]').forEach(input => { input.disabled = !harmony; });
         updateTags();
@@ -258,6 +280,22 @@
         refresh();
         status(`Assigned ${recordings[source].name} to all four voice characters; choose four written parts for SATB harmony.`);
     };
+    function chooseWrittenParts(indices) {
+        invalidateProcessed();
+        $('arrangementMode').value = 'choir';
+        assignments.forEach((part, i) => {
+            part.enabled = indices.includes(i);
+            part.solo = false; part.mute = false; // quick choices must be immediately audible
+        });
+        $('tagVoice').value = String(indices[0]); tagPage = selectedNote = 0;
+        refresh();
+        const missing = indices.map(i => assignments[i]).filter(part => !score?.tracks[part.track]?.notes.length);
+        if (missing.length) warning(`${missing.map(part => part.name).join(', ')} needs a written-note MIDI track. Choose it in the card below; no part is copied or invented.`);
+        else warning('');
+        status(`Included ${indices.map(i => names[i]).join(', ')} on their written tracks. Render to hear this selection.`);
+    }
+    $('selectAll').onclick = () => chooseWrittenParts([0, 1, 2, 3]);
+    for (let i = 0; i < names.length; ++i) $('select' + names[i]).onclick = () => chooseWrittenParts([i]);
     function tagTarget() {
         const mode = $('arrangementMode').value;
         const i = mode === 'solo' ? Number($('soloVoice').value) : mode === 'unison' ? 0 : Number($('tagVoice').value);
@@ -387,7 +425,8 @@
         const marks = tags[key] || [], missing = notes.reduce((n, _, i) => n + (!marks[i] ? 1 : 0), 0);
         tagPage = Math.min(tagPage, Math.floor((notes.length - 1) / 20));
         if (selectedNote < tagPage * 20 || selectedNote >= Math.min(notes.length, (tagPage + 1) * 20)) selectedNote = tagPage * 20;
-        $('tagInfo').textContent = `${name} · written track ${track + 1} · ${source.name} · ${notes.length} notes (${missing} untagged). Source ranges are seconds in the unchanged recording.`;
+        const notIncluded = mode !== 'solo' && target.part.enabled === false;
+        $('tagInfo').textContent = `${name}${notIncluded ? ' (not included in mix)' : ''} · written track ${track + 1} · ${source.name} · ${notes.length} notes (${missing} untagged). Source ranges are seconds in the unchanged recording.`;
         $('tagPageInfo').textContent = `Notes ${tagPage * 20 + 1}–${Math.min(notes.length, (tagPage + 1) * 20)} of ${notes.length}`;
         $('tagPrevious').disabled = tagPage === 0;
         $('tagNext').disabled = (tagPage + 1) * 20 >= notes.length;
@@ -556,13 +595,14 @@
             const partSnapshot = Studio.arrangeParts(mode, score, assignments,
                 Number($('commonSource').value), Number($('melodyTrack').value), Number($('soloVoice').value));
             const shift = transpose();
-            for (const part of partSnapshot) {
+            const anySolo = partSnapshot.some(p => p.enabled !== false && !p.mute && p.solo);
+            const activeParts = partSnapshot.filter(p => p.enabled !== false && !p.mute && (!anySolo || p.solo));
+            for (const part of activeParts) {
                 part.transposeSemitones = shift;
                 part.pitchDeltas = score.tracks[part.track].notes.map((_, i) => pitchEdits[pitchKey(part.track, i)] || 0);
             }
             if ($('phraseMode').checked) {
-                for (const part of partSnapshot) {
-                    if (part.mute || (partSnapshot.some(p => p.solo) && !part.solo)) continue;
+                for (const part of activeParts) {
                     const marks = tags[tagKey(part.track, part.recording)], notes = score.tracks[part.track].notes;
                     if (!marks || marks.length !== notes.length || marks.some(mark => !mark)) {
                         throw Error(`${part.name}: tag every written note with a source range first. Select the part in step 4 or use Guess sequential ranges.`);

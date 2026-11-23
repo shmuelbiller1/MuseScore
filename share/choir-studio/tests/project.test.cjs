@@ -58,6 +58,8 @@ test('malformed or oversized session data fails rather than silently changing th
     assert.throws(() => Project.decodeProject(JSON.stringify(altered)), /Invalid saved note pitch edit/);
     altered.pitchEdits = []; altered.controls.sourceKey = '9:major';
     assert.throws(() => Project.decodeProject(JSON.stringify(altered)), /Invalid saved key transposition/);
+    altered.controls.sourceKey = '9:minor'; altered.parts[3].enabled = 'yes';
+    assert.throws(() => Project.decodeProject(JSON.stringify(altered)), /Invalid part setting: enabled/);
     await assert.rejects(() => Project.encodeProject({ midiBytes: midi(), recordings: [{ name: 'huge.wav',
         blob: new Blob([new Uint8Array(24 * 1024 * 1024 + 1)], { type: 'audio/wav' }) }],
     parts, tags: [], controls }), /oversized original recording/);

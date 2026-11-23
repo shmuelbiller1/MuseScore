@@ -341,9 +341,14 @@
     function arrangeParts(mode, score, parts, recording, melodyTrack, soloVoice = 0) {
         if (!score || !Array.isArray(parts) || parts.length !== 4) throw Error('Set up four voice characters');
         if (mode === 'choir') {
-            const tracks = parts.map(part => part.track);
-            if (tracks.some(track => !score.tracks[track]?.notes.length) || new Set(tracks).size !== 4) {
-                throw Error('Four-part harmony requires four different written-note tracks; arrange the other parts in the score first.');
+            const included = parts.filter(part => part && part.enabled !== false);
+            if (!included.length) throw Error('Include at least one written part to render');
+            const unmuted = included.filter(part => !part.mute);
+            if (!unmuted.length) throw Error('Unmute at least one included written part');
+            const active = unmuted.some(part => part.solo) ? unmuted.filter(part => part.solo) : unmuted;
+            const tracks = active.map(part => part.track);
+            if (tracks.some(track => !score.tracks[track]?.notes.length) || new Set(tracks).size !== tracks.length) {
+                throw Error('Each included voice needs a different written-note track; arrange or disable the other parts first.');
             }
             return parts.map(part => ({ ...part }));
         }
@@ -355,9 +360,12 @@
             : { ...part, track: melodyTrack, recording, sourceHz: 0, cropStart: 0, cropEnd: 0 };
         if (mode === 'solo') {
             if (!Number.isInteger(soloVoice) || soloVoice < 0 || soloVoice >= 4) throw Error('Choose a solo voice character');
-            return [{ ...retarget(parts[soloVoice]), mute: false, solo: false }];
+            return [{ ...retarget(parts[soloVoice]), enabled: true, mute: false, solo: false }];
         }
-        if (mode === 'unison') return parts.map(retarget);
+        if (mode === 'unison') {
+            if (!parts.some(part => part && part.enabled !== false)) throw Error('Include at least one voice layer');
+            return parts.map(retarget);
+        }
         throw Error('Choose solo, four-part choir, or unison layers');
     }
 
@@ -365,7 +373,8 @@
         if (!score || !Array.isArray(parts) || parts.length < 1 || parts.length > 4) throw Error('Map one to four voice layers');
         if (!Number.isFinite(rate) || rate < 8000 || rate > 96000) throw Error('Unsupported output sample rate');
         if (!Number.isFinite(maxSeconds) || maxSeconds <= 0) throw Error('Invalid render length limit');
-        const selected = parts.filter(p => p && !p.mute && (!parts.some(x => x && x.solo) || p.solo));
+        const anySolo = parts.some(p => p && p.enabled !== false && !p.mute && p.solo);
+        const selected = parts.filter(p => p && p.enabled !== false && !p.mute && (!anySolo || p.solo));
         if (selected.some(p => !recordings[p.recording])) throw Error('Each active part needs a recording');
         let duration = 0.1;
         for (const part of selected) {

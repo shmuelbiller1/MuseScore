@@ -57,6 +57,56 @@ test('unison layers copy the chosen melody timing only; SATB retains distinct ba
         'bass must follow its own written pitch, not soprano transposition');
 });
 
+test('independent written-part mode renders Bass alone, any subset, or all four without borrowing disabled tracks', () => {
+    const bassOnly = parts.map((part, i) => ({ ...part, enabled: i === 3,
+        track: i === 3 ? 4 : -1, recording: i === 3 ? 0 : 99 }));
+    const arranged = Studio.arrangeParts('choir', score, bassOnly, 0, 1);
+    const mix = Studio.render(score, arranged, recordings, rate, 3);
+    assert.ok(mix.peak > 0.01);
+    assert.ok(rms(mix.left, 0, 0.34) < 0.001, 'Bass was replaced by an early soprano line');
+    assert.ok(Math.abs(Studio.estimatePitch(mix.left, rate, 0.415) - Studio.hz(57)) < 8);
+    assert.ok(rms(mix.left, 0.60, 0.75) < 0.001, 'Bass written rest was lost');
+    const inactiveSolo = bassOnly.map((p, i) => ({ ...p, solo: i === 0 }));
+    assert.ok(Studio.render(score, inactiveSolo, recordings, rate, 3).peak > 0.01,
+        'a solo flag on a disabled part must not silence the selected bass');
+    const temporarilySolo = parts.map((p, i) => ({ ...p, track: i === 3 ? 4 : -1,
+        recording: i === 3 ? 0 : 99, solo: i === 3 }));
+    const onlyBass = Studio.arrangeParts('choir', score, temporarilySolo, 0, 1);
+    assert.ok(Studio.render(score, onlyBass, recordings, rate, 3).peak > 0.01,
+        'Solo Bass should not require missing muted-out voice tracks');
+    const altoBass = parts.map((part, i) => ({ ...part, enabled: i === 1 || i === 3,
+        track: i === 1 ? 2 : i === 3 ? 4 : -1 }));
+    const ab = Studio.render(score, Studio.arrangeParts('choir', score, altoBass, 0, 1), recordings, rate, 3);
+    assert.ok(rms(ab.left, 0.17, 0.23) > 0.005, 'Alto absent');
+    assert.ok(rms(ab.left, 0.43, 0.49) > 0.005, 'Bass absent');
+    assert.deepEqual(parts.map(p => p.track), [1, 2, 3, 4], 'subset changed the original assignments');
+    assert.throws(() => Studio.arrangeParts('choir', score, parts.map(p => ({ ...p, enabled: false })), 0, 1),
+        /Include at least one written part/);
+    const duplicatedInactive = parts.map((p, i) => ({ ...p, enabled: i === 3, track: 4 }));
+    assert.equal(Studio.arrangeParts('choir', score, duplicatedInactive, 0, 1).filter(p => p.enabled).length, 1);
+    const unison = Studio.arrangeParts('unison', score, parts.map((p, i) => ({ ...p, enabled: i === 1 || i === 3 })), 0, 1);
+    assert.ok(Studio.render(score, unison, recordings, rate, 3).peak > 0.01);
+    const selectedSolo = Studio.arrangeParts('solo', score, bassOnly, 0, 4, 3);
+    assert.equal(selectedSolo[0].enabled, true, 'explicit solo must work even after disabling that layer');
+});
+
+test('all 15 nonempty written-part subsets contain exactly the selected independent note lines', () => {
+    const isolated = parts.map((_, i) => Studio.render(score, Studio.arrangeParts('choir', score,
+        parts.map((p, j) => ({ ...p, enabled: i === j })), 0, 1), recordings, rate, 3));
+    for (let mask = 1; mask < 16; ++mask) {
+        const selected = parts.map((p, i) => ({ ...p, enabled: Boolean(mask & (1 << i)),
+            track: mask & (1 << i) ? p.track : -1,
+            recording: mask & (1 << i) ? p.recording : 99 }));
+        const mix = Studio.render(score, Studio.arrangeParts('choir', score, selected, 0, 1), recordings, rate, 3);
+        assert.ok(mix.peak > 0.01, `mask ${mask}: unexpectedly silent`);
+        for (let sample = 0; sample < mix.left.length; sample += 113) {
+            const expected = isolated.reduce((sum, layer, i) => sum + ((mask & (1 << i)) ? (layer.left[sample] || 0) : 0), 0);
+            assert.ok(Math.abs(mix.left[sample] - expected) < 0.00001,
+                `mask ${mask}, sample ${sample}: unexpected written line or missing selected line`);
+        }
+    }
+});
+
 test('real single human vowel renders repeatable solo bass, unison and SATB audio with warnings', () => {
     const { solo, unison, harmony, measurements } = evaluate();
     const base = path.join(__dirname, '../examples');
@@ -128,9 +178,9 @@ test('solo/unison never inherit a different recording’s source Hz or crop', ()
 
 test('choir mode rejects missing or duplicate written parts instead of inventing harmony', () => {
     const duplicate = parts.map(p => ({ ...p })); duplicate[3].track = 1;
-    assert.throws(() => Studio.arrangeParts('choir', score, duplicate, 0, 1), /four different written-note tracks/);
+    assert.throws(() => Studio.arrangeParts('choir', score, duplicate, 0, 1), /Each included voice needs a different written-note track/);
     const missing = parts.map(p => ({ ...p })); missing[3].track = 0;
-    assert.throws(() => Studio.arrangeParts('choir', score, missing, 0, 1), /four different written-note tracks/);
+    assert.throws(() => Studio.arrangeParts('choir', score, missing, 0, 1), /Each included voice needs a different written-note track/);
     assert.throws(() => Studio.arrangeParts('solo', score, parts, 0, 0, 0), /written melody track/);
     assert.throws(() => Studio.arrangeParts('unknown', score, parts, 0, 1, 0), /Choose solo/);
 });

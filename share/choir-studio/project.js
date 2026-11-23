@@ -11,7 +11,7 @@
     const MAX_SOURCE = 24 * 1024 * 1024, MAX_TOTAL = 96 * 1024 * 1024, MAX_MIDI = 5 * 1024 * 1024;
     const FIELDS = ['name', 'preset', 'track', 'recording', 'volume', 'pan', 'correction', 'formant',
         'brightness', 'warmth', 'breathiness', 'resonance', 'strength', 'cropStart', 'cropEnd', 'sourceHz',
-        'variation', 'mute', 'solo'];
+        'enabled', 'variation', 'mute', 'solo'];
     function base64(bytes) {
         const chunks = [];
         for (let i = 0; i < bytes.length; i += 24576) {
@@ -44,7 +44,7 @@
                 const value = part[field];
                 if (value === undefined) continue;
                 if (['name', 'preset'].includes(field) ? typeof value !== 'string' || value.length > 80
-                    : ['variation', 'mute', 'solo'].includes(field) ? typeof value !== 'boolean'
+                    : ['enabled', 'variation', 'mute', 'solo'].includes(field) ? typeof value !== 'boolean'
                         : !Number.isFinite(value) || Math.abs(value) > 1000000) throw Error('Invalid part setting: ' + field);
                 output[field] = value;
             }

@@ -74,13 +74,17 @@ function page(mimeType = 'audio/webm', decodedSamples) {
         get releasePermission() { return releasePermission; } };
 }
 
-function onePartMidi() {
+function onePartMidi(partIndex = 0) {
     const bytes = midi();
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const firstNote = 14 + 8 + view.getUint32(18);
-    const end = firstNote + 8 + view.getUint32(firstNote + 4);
-    const reduced = bytes.slice(0, end);
-    reduced[10] = 0; reduced[11] = 2; // conductor + one written part
+    const conductorEnd = 14 + 8 + view.getUint32(18);
+    let begin = conductorEnd;
+    for (let i = 0; i < partIndex; ++i) begin += 8 + view.getUint32(begin + 4);
+    const end = begin + 8 + view.getUint32(begin + 4);
+    const reduced = new Uint8Array(conductorEnd + end - begin);
+    reduced.set(bytes.subarray(0, conductorEnd));
+    reduced.set(bytes.subarray(begin, end), conductorEnd);
+    reduced[10] = 0; reduced[11] = 2; // conductor + chosen written part
     return reduced;
 }
 
@@ -139,7 +143,96 @@ test('solo renders a MIDI with only one written part; SATB refuses to invent the
     assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
     ui.$('arrangementMode').value = 'choir';
     await ui.$('render').onclick();
-    assert.match(ui.$('warning').textContent, /four different written-note tracks/);
+    assert.match(ui.$('warning').textContent, /Each included voice needs a different written-note track/);
+});
+
+test('Bass-only quick choice uses its own one-track MIDI without requiring three other voices', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => onePartMidi(3) }] } });
+    const score = Studio.parseMidi(onePartMidi(3));
+    assert.equal(score.tracks[1].name, 'Bass');
+    assert.equal(score.tracks[1].notes[0].pitch, 57);
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'one-singer.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    ui.$('selectBass').onclick();
+    assert.equal(ui.$('arrangementMode').value, 'choir');
+    assert.match(ui.$('tagInfo').textContent, /^Bass/);
+    assert.deepEqual(ui.$('parts').children.map(card => findByField(card, 'enabled').checked), [false, false, false, true]);
+    assert.deepEqual(ui.$('parts').children.map(card => Number(findByField(card, 'track').value)), [-1, -1, -1, 1]);
+    assert.equal(findByField(ui.$('parts').children[0], 'track').options[0].value, '-1',
+        'unassigned parts must be visibly labeled rather than silently mapped');
+    assert.equal(ui.$('warning').textContent, '', 'named Bass score should map without manual assignment');
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+    ui.$('download').onclick();
+    const output = ui.urls.find(u => u.url === ui.downloads.at(-1).url).blob;
+    const data = new DataView(await output.arrayBuffer()), left = new Float32Array((data.byteLength - 44) / 4);
+    for (let i = 0; i < left.length; ++i) left[i] = data.getInt16(44 + 4 * i, true) / 32767;
+    assert.ok(Math.abs(Studio.estimatePitch(left, 24000, 0.415) - Studio.hz(57)) < 8);
+    await ui.$('saveProject').onclick();
+    const saved = ui.urls.find(u => u.url === ui.downloads.at(-1).url).blob;
+    const restored = page();
+    await restored.$('openProject').onchange({ target: { files: [saved] } });
+    assert.deepEqual(restored.$('parts').children.map(c => findByField(c, 'enabled').checked), [false, false, false, true]);
+    await restored.$('render').onclick();
+    assert.equal(restored.$('listen').disabled, false, restored.$('warning').textContent);
+    restored.$('selectAll').onclick();
+    await restored.$('render').onclick();
+    assert.match(restored.$('warning').textContent, /Each included voice needs a different written-note track/);
+    const bassCard = restored.$('parts').children[3], bassSolo = findByField(bassCard, 'solo');
+    bassSolo.checked = true; bassCard.onchange({ target: bassSolo });
+    await restored.$('render').onclick();
+    assert.equal(restored.$('listen').disabled, false, restored.$('warning').textContent);
+});
+
+test('each of the other three written-part choices renders its own one-track MIDI without invented parts', async () => {
+    for (let i = 0; i < 3; ++i) {
+        const ui = page();
+        const bytes = onePartMidi(i), written = Studio.parseMidi(bytes).tracks[1].notes;
+        await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => bytes }] } });
+        const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+        Object.assign(file, { name: 'one-singer.wav' });
+        await ui.$('wav').onchange({ target: { files: [file] } });
+        ui.$('select' + ['Soprano', 'Alto', 'Tenor'][i]).onclick();
+        assert.deepEqual(ui.$('parts').children.map(c => Number(findByField(c, 'track').value)),
+            [0, 1, 2, 3].map(j => j === i ? 1 : -1));
+        assert.deepEqual(ui.$('parts').children.map(c => findByField(c, 'enabled').checked),
+            [0, 1, 2, 3].map(j => j === i));
+        await ui.$('render').onclick();
+        assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+        ui.$('download').onclick();
+        const output = ui.urls.find(u => u.url === ui.downloads.at(-1).url).blob;
+        const data = new DataView(await output.arrayBuffer());
+        const left = new Float32Array((data.byteLength - 44) / 4);
+        for (let sample = 0; sample < left.length; ++sample) left[sample] = data.getInt16(44 + 4 * sample, true) / 32767;
+        assert.ok(Math.abs(Studio.estimatePitch(left, 24000, written[0].startSeconds + 0.04)
+            - Studio.hz(written[0].pitch)) < 8, `independent ${['Soprano', 'Alto', 'Tenor'][i]} pitch`);
+        if (written[0].startSeconds > 0.02) assert.ok(left.slice(0, Math.floor((written[0].startSeconds - 0.01) * 24000))
+            .every(sample => Math.abs(sample) < 0.001), 'the initial written rest should be silent');
+    }
+});
+
+test('custom Alto + Bass selection needs tags only on those two written parts', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'one-take.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    const mode = ui.$('arrangementMode'); mode.value = 'choir'; mode.onchange();
+    for (const i of [0, 2]) {
+        const card = ui.$('parts').children[i], checkbox = findByField(card, 'enabled');
+        checkbox.checked = false; card.onchange({ target: checkbox });
+    }
+    assert.match(ui.$('modeInfo').textContent, /Alto, Bass/);
+    ui.$('phraseMode').checked = true; ui.$('phraseMode').onchange();
+    for (const i of [1, 3]) { ui.$('tagVoice').value = String(i); ui.$('tagVoice').onchange(); ui.$('fillTags').onclick(); }
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+    const card = ui.$('parts').children[0], include = findByField(card, 'enabled');
+    include.checked = true; card.onchange({ target: include });
+    await ui.$('render').onclick();
+    assert.match(ui.$('warning').textContent, /Soprano: tag every written note/);
 });
 
 test('solo/choir/unison picker switches track editing and rejects duplicate SATB mapping', async () => {
@@ -156,7 +249,7 @@ test('solo/choir/unison picker switches track editing and rejects duplicate SATB
     const bassTrack = findByField(bassCard, 'track'); bassTrack.value = '1';
     bassCard.onchange({ target: bassTrack });
     await ui.$('render').onclick();
-    assert.match(ui.$('warning').textContent, /four different written-note tracks/);
+    assert.match(ui.$('warning').textContent, /Each included voice needs a different written-note track/);
     mode.value = 'unison'; mode.onchange();
     assert.match(ui.$('modeInfo').textContent, /not SATB harmony/);
     await ui.$('render').onclick();
