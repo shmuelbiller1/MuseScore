@@ -146,6 +146,36 @@ test('solo renders a MIDI with only one written part; SATB refuses to invent the
     assert.match(ui.$('warning').textContent, /Each included voice needs a different written-note track/);
 });
 
+test('setup guide explains next steps and explicitly maps an unnamed single-track Bass export', async () => {
+    const ui = page();
+    assert.match(ui.$('setupGuide').textContent, /import a singing WAV/);
+    const bytes = Buffer.from(onePartMidi(3));
+    const offset = bytes.indexOf('Bass'); assert.ok(offset > 0); bytes.write('Part', offset);
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => bytes }] } });
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'my-voice.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    ui.$('selectBass').onclick();
+    assert.match(ui.$('setupGuide').textContent, /assign a written-note MIDI track to Bass/);
+    assert.equal(ui.$('useOnlyTrack').hidden, false);
+    assert.match(ui.$('useOnlyTrack').textContent, /Part.*Bass/);
+    ui.$('useOnlyTrack').onclick();
+    assert.equal(Number(findByField(ui.$('parts').children[3], 'track').value), 1);
+    assert.equal(ui.$('useOnlyTrack').hidden, true);
+    assert.match(ui.$('setupGuide').textContent, /Ready: audition a note or render/);
+    ui.$('phraseMode').checked = true; ui.$('phraseMode').onchange();
+    assert.match(ui.$('setupGuide').textContent, /tag every written Bass note/);
+    ui.$('fillTags').onclick();
+    assert.match(ui.$('setupGuide').textContent, /Ready: audition a note or render/);
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+    assert.match(ui.$('setupGuide').textContent, /play and download the processed WAV/);
+    const card = ui.$('parts').children[3], mute = findByField(card, 'mute');
+    mute.checked = true; card.onchange({ target: mute });
+    assert.equal(ui.$('download').disabled, true);
+    assert.match(ui.$('setupGuide').textContent, /Unmute/);
+});
+
 test('Bass-only quick choice uses its own one-track MIDI without requiring three other voices', async () => {
     const ui = page();
     await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => onePartMidi(3) }] } });

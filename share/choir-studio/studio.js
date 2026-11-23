@@ -29,6 +29,7 @@
             $('processedTagPlayer').pause(); $('processedTagPlayer').src = '';
             URL.revokeObjectURL(previewUrl); previewUrl = undefined;
         }
+        refreshGuide();
     }
     async function audio() { if (!context) context = new AudioContext({ sampleRate: rate }); await context.resume(); return context; }
     const status = text => { $('status').textContent = text; };
@@ -229,6 +230,7 @@
                         updateMode();
                     }
                 }
+                refreshGuide();
             };
             parent.append(card);
         });
@@ -308,6 +310,59 @@
     const tagKey = (track, recording) => `${track}:${recording}`;
     const pitchKey = (track, noteIndex) => `${track}:${noteIndex}`;
     const transpose = () => Studio.keySemitones($('keyFrom').value, $('keyTo').value, Number($('keyOctaves').value));
+    function refreshGuide() {
+        const button = $('useOnlyTrack'); button.hidden = true;
+        let message;
+        if (!recordings.length) message = 'Next: import a singing WAV or record a voice in step 1. You can keep and preview the original.';
+        else if (!score) message = 'Next: load your exported MIDI in step 2. Its written notes and rests control the result.';
+        else {
+            try {
+                transpose(); // Show an invalid key change before claiming the setup is ready.
+                const mode = $('arrangementMode').value;
+                if (mode === 'choir') {
+                    const included = assignments.filter(part => part.enabled !== false);
+                    const unmuted = included.filter(part => !part.mute);
+                    const active = unmuted.some(part => part.solo) ? unmuted.filter(part => part.solo) : unmuted;
+                    const missing = active.filter(part => !score.tracks[part.track]?.notes.length);
+                    if (missing.length) {
+                        message = `Next: assign a written-note MIDI track to ${missing.map(p => p.name).join(', ')} in step 3, or disable those parts. No notes will be invented.`;
+                        if (included.length === 1 && active.length === 1 && Studio.noteTrackIndices(score).length === 1) {
+                            button.textContent = `Assign the only MIDI track (${score.tracks[Studio.noteTrackIndices(score)[0]].name}) to ${active[0].name}`;
+                            button.hidden = false; // Explicit confirmation for an unnamed single-part export.
+                        }
+                    }
+                }
+                if (!message) {
+                    const parts = Studio.arrangeParts(mode, score, assignments,
+                        Number($('commonSource').value), Number($('melodyTrack').value), Number($('soloVoice').value));
+                    const anySolo = parts.some(p => p.enabled !== false && !p.mute && p.solo);
+                    const active = parts.filter(p => p.enabled !== false && !p.mute && (!anySolo || p.solo));
+                    if (!active.length) message = 'Next: unmute an included part in step 3.';
+                    else if (active.some(p => !recordings[p.recording])) message = 'Next: assign a recording to each audible part in step 3.';
+                    else if ($('phraseMode').checked) {
+                        const missing = active.find(part => {
+                            const marks = tags[tagKey(part.track, part.recording)];
+                            return !marks || marks.length !== score.tracks[part.track].notes.length || marks.some(mark => !mark);
+                        });
+                        if (missing) message = `Next: tag every written ${missing.name} note in step 4 (or turn off tagged mode to repeat one vowel).`;
+                    }
+                    if (!message) message = processedUrl
+                        ? 'Ready: play and download the processed WAV in step 5. Save the session separately to keep your edits.'
+                        : 'Ready: audition a note or render the mix in step 5. Listen against the unchanged original before downloading.';
+                }
+            } catch (err) { message = `Next: ${err.message} Check the mode, key and written-track choices in steps 3–4.`; }
+        }
+        if ($('setupGuide').textContent !== message) $('setupGuide').textContent = message;
+    }
+    $('useOnlyTrack').onclick = () => {
+        const tracks = score && Studio.noteTrackIndices(score);
+        const included = assignments.filter(part => part.enabled !== false);
+        if ($('arrangementMode').value !== 'choir' || tracks?.length !== 1 || included.length !== 1
+            || score.tracks[included[0].track]?.notes.length) return;
+        included[0].track = tracks[0];
+        invalidateProcessed(); tagPage = selectedNote = 0; refresh();
+        warning(''); status(`Assigned ${score.tracks[tracks[0]].name} to ${included[0].name}. Confirm this really is its written line before rendering.`);
+    };
     const preferFlats = () => ['7:minor', '2:minor', '0:minor', '5:minor', '10:minor', '3:minor',
         '1:major', '3:major', '5:major', '8:major', '10:major'].includes($('keyTo').value);
     function showKeyGuide() {
@@ -416,6 +471,7 @@
         finally { previewPending = false; }
     }
     function updateTags() {
+        refreshGuide();
         const shift = showKeyGuide(), mode = $('arrangementMode').value;
         $('tagVoice').disabled = mode !== 'choir';
         if (mode === 'solo') $('tagVoice').value = $('soloVoice').value;
@@ -624,7 +680,7 @@
             status(`Rendered ${(mix.left.length / rate).toFixed(2)} seconds; peak ${mix.peak.toFixed(3)}. Original source unchanged.`);
             warning(mix.warnings.slice(0, 8).join('\n') || 'Experimental vowel rendering: audition for artifacts; no convincing choir-timbre claim.');
         } catch (err) { status('Render failed'); warning(err.message); }
-        finally { renderPending = false; $('render').disabled = false; }
+        finally { renderPending = false; $('render').disabled = false; refreshGuide(); }
     };
     $('saveProject').onclick = async () => {
         if (projectPending) return;
