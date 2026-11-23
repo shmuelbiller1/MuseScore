@@ -31,7 +31,37 @@ $exe = Join-Path $probe 'App\MuseScore\bin\MuseScoreStudio5.exe'
 $font = Join-Path $probe 'App\MuseScore\sound\MS Basic.sf3'
 $license = Join-Path $probe 'App\MuseScore\sound\MS Basic_License.md'
 $qt = Join-Path $probe 'App\MuseScore\bin\Qt6Core.dll'
-foreach ($required in @($launcher, $exe, $font, $license, $qt)) {
+$choir = Join-Path $probe 'App\MuseScore\choir-studio'
+foreach ($required in @($launcher, $exe, $font, $license, $qt,
+    (Join-Path $choir 'index.html'), (Join-Path $choir 'choir.js'),
+    (Join-Path $choir 'studio.js'), (Join-Path $choir 'project.js'), (Join-Path $choir 'README.md'),
+    (Join-Path $choir 'examples\four-independent-parts.mid'),
+    (Join-Path $choir 'examples\four-part-synthetic-mix.wav'),
+    (Join-Path $choir 'examples\four-part-real-vowel-mix.wav'),
+    (Join-Path $choir 'examples\four-part-long-vowel-mix.wav'),
+    (Join-Path $choir 'examples\after-long-soprano-A4.wav'),
+    (Join-Path $choir 'examples\after-tagged-real-tenor.wav'),
+    (Join-Path $choir 'examples\tagged-real-tenor-metrics.json'),
+    (Join-Path $choir 'examples\tagged-real-tenor.choir.json'),
+    (Join-Path $choir 'examples\after-tagged-A4-to-B4.wav'),
+    (Join-Path $choir 'examples\after-tagged-A-minor-to-G-minor.wav'),
+    (Join-Path $choir 'examples\pitch-edit-metrics.json'),
+    (Join-Path $choir 'examples\four-independent-real-registers.mid'),
+    (Join-Path $choir 'examples\long-vowel-metrics.json'),
+    (Join-Path $choir 'examples\single-source-metrics.json'),
+    (Join-Path $choir 'examples\single-source-solo-bass.wav'),
+    (Join-Path $choir 'examples\single-source-unison.wav'),
+    (Join-Path $choir 'examples\single-source-four-written-parts.wav'),
+    (Join-Path $choir 'examples\real-vowel-metrics.json'),
+    (Join-Path $choir 'examples\vocalset\ATTRIBUTION.md'),
+    (Join-Path $choir 'examples\vocalset\soprano-f1-a.wav'),
+    (Join-Path $choir 'examples\vocalset\alto-f5-a.wav'),
+    (Join-Path $choir 'examples\vocalset\tenor-m2-a.wav'),
+    (Join-Path $choir 'examples\vocalset\bass-m8-a.wav'),
+    (Join-Path $choir 'examples\vocalset\soprano-f1-long-a.wav'),
+    (Join-Path $choir 'examples\vocalset\alto-f5-long-a.wav'),
+    (Join-Path $choir 'examples\vocalset\tenor-m2-long-a.wav'),
+    (Join-Path $choir 'examples\vocalset\bass-m8-long-a.wav'))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing offline dependency: $required" }
 }
 if ((Get-Item $font).Length -lt 1000000) { throw 'Bundled MS Basic soundfont is too small.' }

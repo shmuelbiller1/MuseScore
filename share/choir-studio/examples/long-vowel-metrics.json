@@ -1,0 +1,57 @@
+{
+  "methodology": "objective F0 for four short notes from distinct ~0.8s CC BY 4.0 human vowels; not perceived realism",
+  "source": "VocalSet 1.2, CC BY 4.0 (see vocalset/ATTRIBUTION.md)",
+  "sampleRate": 24000,
+  "durationSeconds": 0.9875,
+  "warnings": [],
+  "measurements": [
+    {
+      "part": "Soprano",
+      "singer": "soprano-f1-long-a.wav",
+      "sourceHz": 526.12,
+      "midiPitch": 69,
+      "targetHz": 440,
+      "measuredHz": 439.94,
+      "errorCents": -0.2,
+      "noteStartSeconds": 0,
+      "noteEndSeconds": 0.25,
+      "peak": 0.237
+    },
+    {
+      "part": "Alto",
+      "singer": "alto-f5-long-a.wav",
+      "sourceHz": 255.23,
+      "midiPitch": 64,
+      "targetHz": 329.63,
+      "measuredHz": 329.33,
+      "errorCents": -1.6,
+      "noteStartSeconds": 0.125,
+      "noteEndSeconds": 0.375,
+      "peak": 0.218
+    },
+    {
+      "part": "Tenor",
+      "singer": "tenor-m2-long-a.wav",
+      "sourceHz": 252.47,
+      "midiPitch": 60,
+      "targetHz": 261.63,
+      "measuredHz": 261.56,
+      "errorCents": -0.4,
+      "noteStartSeconds": 0.25,
+      "noteEndSeconds": 0.5,
+      "peak": 0.242
+    },
+    {
+      "part": "Bass",
+      "singer": "bass-m8-long-a.wav",
+      "sourceHz": 128.2,
+      "midiPitch": 45,
+      "targetHz": 110,
+      "measuredHz": 109.93,
+      "errorCents": -1.1,
+      "noteStartSeconds": 0.375,
+      "noteEndSeconds": 0.5625,
+      "peak": 0.343
+    }
+  ]
+}

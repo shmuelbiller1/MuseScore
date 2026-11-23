@@ -35,6 +35,7 @@
 #include "interactive/iinteractive.h"
 #include "interactive/iplatforminteractive.h"
 #include "iappshellconfiguration.h"
+#include "global/iglobalconfiguration.h"
 #include "multiwindows/imultiwindowsprovider.h"
 #include "project/iopenprojectscenario.h"
 #include "project/icloseprojectscenario.h"
@@ -59,6 +60,7 @@ class AppshellCommandsController : public QObject, public IAppshellCommandsContr
 {
     muse::GlobalInject<muse::mi::IMultiWindowsProvider> multiwindowsProvider;
     muse::GlobalInject<IAppShellConfiguration> configuration;
+    muse::GlobalInject<muse::IGlobalConfiguration> globalConfiguration;
     muse::GlobalInject<muse::languages::ILanguagesService> languagesService;
     muse::GlobalInject<muse::IApplication> application;
     muse::GlobalInject<muse::IPlatformInteractive> platformInteractive;
@@ -126,6 +128,7 @@ private:
     void openAboutMusicXMLDialog();
 
     void openOnlineHandbookPage();
+    void openExperimentalChoirPage();
     void openAskForHelpPage();
     void openAccessibilityStatementPage();
     void openPreferencesDialog();

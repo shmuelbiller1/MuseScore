@@ -433,6 +433,7 @@ MenuItem* AppMenuModel::makeHelpMenu(bool addDiagnosticsSubMenu)
 
     helpItems << makeMenuItem(APP_ONLINE_HANDBOOK_COMMAND);
     helpItems << makeMenuItem(APP_ASK_HELP_COMMAND);
+    helpItems << makeMenuItem(APP_EXPERIMENTAL_CHOIR_COMMAND);
     helpItems << makeSeparator();
 
     if (addDiagnosticsSubMenu) {
