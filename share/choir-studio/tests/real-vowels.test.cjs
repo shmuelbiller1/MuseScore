@@ -26,6 +26,22 @@ test('human VocalSet input clips match attributed sources and contain audible si
         assert.ok(pcm.some(sample => Math.abs(sample) > 0.1), `${file} is silent`);
     }
 });
+test('extreme timbre/formant controls do not retune four real sung vowels', () => {
+    const names = Object.keys(singers), pitches = [69, 64, 60, 57];
+    for (let i = 0; i < names.length; ++i) {
+        const input = decodeWav(fs.readFileSync(path.join(root, 'vocalset', names[i])));
+        const sourceHz = Studio.estimatePitch(input, 24000, 0.003, 0, 0.077);
+        const target = Studio.hz(pitches[i]);
+        const raw = Studio.vowelNote(input, 24000, sourceHz, target, 8400, { cropStart: 0.003, cropEnd: 0.077 });
+        for (const settings of [{ formant: 0.7, brightness: 0, warmth: 1 },
+            { formant: 1.3, brightness: 1, warmth: 0 }]) {
+            const signal = Studio.shape(raw, 24000, settings);
+            const observed = Studio.estimatePitch(signal, 24000, 0.10);
+            assert.ok(Math.abs(1200 * Math.log2(observed / target)) < 10,
+                `${names[i]} changed notated F0 to ${observed} with ${JSON.stringify(settings)}`);
+        }
+    }
+});
 test('real vowel outputs follow independent written F0 and the demo mix is reproducible', () => {
     const { mix, measurements, warnings } = evaluate();
     assert.equal(measurements.length, 4);

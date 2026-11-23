@@ -31,11 +31,16 @@ The following upstream primary sources were read in November 2026; none of these
 
 The existing MS Basic soundfont licence does **not** license use of any third-party singer samples. The four included singer clips come from VocalSet, whose [primary Zenodo metadata](https://zenodo.org/api/records/1442513) confirms CC BY 4.0; their source transformation and hashes are documented alongside them. No unverified model or recording is bundled. To upgrade to a reliable in-app voice instrument: test multiple consented real recordings across each register, measure pitch/error and consonant preservation, assess timbre blind with listeners, investigate a redistribution-compatible processor and Windows build, then implement a per-track event source through the existing audio-engine interfaces and project persistence. Do not treat this sidecar as a completed replacement.
 
+## Resource probe (not a Windows result)
+
+On this Linux x64 sandbox with Node 22, `node share/choir-studio/examples/benchmark.cjs` rendered 960 synthetic note events across ~120 seconds of 24 kHz stereo score-aligned audio in about 0.25 seconds; resident process size changed from ~41 MB to ~101 MB. This is **not** a peak-memory measurement, browser timing, perceptual measurement or portable-Windows verification. The actual cost varies with score density, input length, device and browser. The 4-minute cap limits in-browser allocation; longer scores fail visibly instead of truncating.
+
 ## Developer checks
 
 ```sh
 node share/choir-studio/examples/generate.cjs  # regenerate the synthetic before/after WAV and MIDI
 node share/choir-studio/examples/evaluate-real.cjs  # reproducible real-vowel F0 measurements; NOT realism
+node share/choir-studio/examples/benchmark.cjs  # local timing and post-run memory (not Windows)
 node --test share/choir-studio/tests/*.test.cjs
 ```
 
