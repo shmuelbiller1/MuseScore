@@ -91,6 +91,29 @@ test('loading conductor MIDI selects four distinct note tracks and can render im
     assert.equal(ui.$('warning').textContent.includes('Choose four different'), false);
 });
 
+test('four imported source files map one-to-one in picker order', async () => {
+    const ui = page();
+    const files = [1, 2, 3, 4].map(i => {
+        const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+        Object.assign(file, { name: `source-${i}.wav` });
+        return file;
+    });
+    await ui.$('wav').onchange({ target: { files } });
+    const sources = ui.$('parts').children.map(card => Number(findByField(card, 'recording').value));
+    assert.deepEqual(sources, [0, 1, 2, 3]);
+    assert.ok(ui.$('status').textContent.includes('Check each part'));
+});
+test('switching timbre preset retains selected label and changes tone, not MIDI track', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const card = ui.$('parts').children[0], preset = findByField(card, 'preset');
+    preset.value = 'Bass';
+    card.onchange({ target: preset });
+    const updated = ui.$('parts').children[0];
+    assert.equal(findByField(updated, 'preset').value, 'Bass');
+    assert.equal(findByField(updated, 'track').value, 1);
+    assert.equal(findByField(updated, 'formant').value, Studio.defaults.Bass.formant);
+});
 test('repeated record clicks while permission is pending cannot leak a second microphone', async () => {
     const ui = page();
     const first = ui.$('record').onclick();

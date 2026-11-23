@@ -28,12 +28,18 @@
         refresh(); status('Source ready. Select a voiced vowel region; pitch detection can be overridden in Hz.');
     }
     $('wav').onchange = async event => {
+        const first = recordings.length;
         for (const file of event.target.files) {
             try {
                 const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
                 if (String.fromCharCode(...head.slice(0, 4)) !== 'RIFF' || String.fromCharCode(...head.slice(8, 12)) !== 'WAVE') throw Error('Choose a RIFF WAV file');
                 await addRecording(file, file.name);
             } catch (err) { warning(`${file.name}: ${err.message}`); }
+        }
+        if (first === 0 && recordings.length >= 4) {
+            assignments.forEach((part, i) => { part.recording = i; });
+            refresh();
+            status('Assigned imported sources in file order. Check each part’s source before rendering.');
         }
     };
     $('record').onclick = async () => {
@@ -113,7 +119,7 @@
     function refresh() {
         const parent = $('parts'); parent.replaceChildren();
         names.forEach((name, index) => {
-            const part = assignments[index] || { name, track: index, recording: 0, volume: 0.7, pan: 0,
+            const part = assignments[index] || { name, preset: name, track: index, recording: 0, volume: 0.7, pan: 0,
                 correction: 1, ...Studio.defaults[name], cropStart: 0, cropEnd: 0, sourceHz: 0, variation: false, mute: false, solo: false };
             assignments[index] = part;
             const card = document.createElement('article'), heading = document.createElement('h3'); heading.textContent = name; card.append(heading);
@@ -127,7 +133,7 @@
             }); source.value = part.recording; labeled('Vocal source', source);
             const preset = document.createElement('select'); preset.dataset.field = 'preset';
             names.forEach(n => { const opt = document.createElement('option'); opt.value = n; opt.textContent = n + ' starting character'; preset.append(opt); });
-            preset.value = name; labeled('Timbre preset', preset);
+            preset.value = part.preset; labeled('Timbre preset', preset);
             card.append(makeSlider('Volume', 'volume', 0, 1, 0.01, part.volume), makeSlider('Pan', 'pan', -1, 1, 0.01, part.pan),
                 makeSlider('Pitch correction', 'correction', 0, 1, 0.01, part.correction), makeSlider('Formant', 'formant', 0.7, 1.3, 0.01, part.formant));
             for (const key of ['brightness', 'warmth', 'breathiness', 'resonance', 'strength']) card.append(makeSlider(key, key, 0, 1, 0.01, part[key]));
@@ -140,9 +146,9 @@
             card.onchange = event => {
                 const { field } = event.target.dataset; if (!field) return;
                 if (field === 'preset') {
-                    Object.assign(part, Studio.defaults[event.target.value]); refresh();
-                } else part[field] = event.target.type === 'checkbox' ? event.target.checked :
-                    ['track', 'recording'].includes(field) ? Number(event.target.value) : Number(event.target.value);
+                    part.preset = event.target.value;
+                    Object.assign(part, Studio.defaults[part.preset]); refresh();
+                } else part[field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value);
             };
             parent.append(card);
         });
@@ -156,7 +162,8 @@
             if (assignments.some(p => !score.tracks[p.track]?.notes.length)
                 || new Set(assignments.map(p => p.track)).size !== 4) throw Error('Choose four different written-note tracks');
             status('Rendering locally…'); warning(''); await new Promise(resolve => setTimeout(resolve, 20));
-            const mix = await Studio.renderAsync(score, assignments, recordings, rate, 240,
+            const partSnapshot = assignments.map(part => ({ ...part }));
+            const mix = await Studio.renderAsync(score, partSnapshot, recordings.slice(), rate, 240,
                 step => status(`Rendering locally… ${step.completed}/${step.total} notes`));
             if (mix.peak < 0.001) throw Error('Rendered silence; choose an audible voiced source and non-muted tracks');
             if (processedUrl) URL.revokeObjectURL(processedUrl);
