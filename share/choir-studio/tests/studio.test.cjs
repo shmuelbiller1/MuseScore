@@ -8,13 +8,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const Studio = require('../choir.js');
+const Project = require('../project.js');
 const { midi } = require('../examples/fixtures.cjs');
 const code = fs.readFileSync(path.join(__dirname, '../studio.js'), 'utf8');
 
 function page(mimeType = 'audio/webm', decodedSamples) {
     const nodes = new Map(), downloads = [], streams = [], urls = [], events = {};
     class Element {
-        constructor(tag) { this.tag = tag; this.dataset = {}; this.style = {}; this.children = []; this.disabled = false; this.value = ''; this.textContent = ''; }
+        constructor(tag) { this.tag = tag; this.dataset = {}; this.style = {}; this.children = []; this.disabled = false; this.checked = false; this.value = ''; this.textContent = ''; }
         append(...children) { this.children.push(...children); }
         replaceChildren(...children) { this.children = [...children]; }
         get options() { return this.children.filter(child => child.tag === 'option'); }
@@ -60,7 +61,7 @@ function page(mimeType = 'audio/webm', decodedSamples) {
             this.onstop();
         }
     }
-    const window = { ChoirStudio: Studio, MediaRecorder, addEventListener: (name, callback) => { events[name] = callback; } };
+    const window = { ChoirStudio: Studio, ChoirProject: Project, MediaRecorder, addEventListener: (name, callback) => { events[name] = callback; } };
     const URL = {
         createObjectURL: blob => { const url = `blob:local-${urls.length}`; urls.push({ url, blob }); return url; },
         revokeObjectURL: () => {}
@@ -81,6 +82,15 @@ function onePartMidi() {
     const reduced = bytes.slice(0, end);
     reduced[10] = 0; reduced[11] = 2; // conductor + one written part
     return reduced;
+}
+
+function findByTagField(root, field) {
+    if (root.dataset?.tagField === field) return root;
+    for (const node of root.children || []) {
+        const found = findByTagField(node, field);
+        if (found) return found;
+    }
+    return undefined;
 }
 
 function findByField(root, field) {
@@ -171,6 +181,29 @@ test('long sung take is auto-voiced; changing a part source resets recording-spe
     assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
 });
 
+test('manual Hz and crop edited after switching shared source are used in solo and unison', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const files = ['first.wav', 'second.wav'].map(name => {
+        const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+        Object.assign(file, { name }); return file;
+    });
+    await ui.$('wav').onchange({ target: { files } });
+    const common = ui.$('commonSource'); common.value = '1'; common.onchange();
+    const card = ui.$('parts').children[0];
+    assert.equal(findByField(card, 'sourceHz').value, 0);
+    for (const [field, value] of [['sourceHz', '220'], ['cropStart', '0.1'], ['cropEnd', '0.5']]) {
+        const input = findByField(card, field); input.value = value; card.onchange({ target: input });
+    }
+    assert.equal(findByField(card, 'recording').value, 1);
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+    const mode = ui.$('arrangementMode'); mode.value = 'unison'; mode.onchange();
+    assert.equal(findByField(ui.$('parts').children[0], 'cropStart').value, 0.1);
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+});
+
 test('editing a voice or arrangement invalidates stale audio and changes during render cannot publish it', async () => {
     const ui = page();
     await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
@@ -194,6 +227,98 @@ test('editing a voice or arrangement invalidates stale audio and changes during 
     const card = ui.$('parts').children[0];
     const preset = findByField(card, 'preset'); preset.value = 'Bass'; card.onchange({ target: preset });
     assert.equal(ui.$('listen').disabled, true);
+});
+
+test('tagged singing mode maps source ranges to notes and saves a self-contained reloadable session', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const original = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(original, { name: 'my voice.wav' });
+    await ui.$('wav').onchange({ target: { files: [original] } });
+    ui.$('phraseMode').checked = true; ui.$('phraseMode').onchange();
+    await ui.$('render').onclick();
+    assert.match(ui.$('warning').textContent, /tag every written note/);
+    ui.$('fillTags').onclick();
+    assert.match(ui.$('tagInfo').textContent, /0 untagged/);
+    const firstRow = ui.$('tagRows').children[0];
+    const begin = findByTagField(firstRow, 'start'); begin.value = '0.02'; firstRow.onchange();
+    assert.equal(findByTagField(ui.$('tagRows').children[0], 'start').value, 0.02);
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+    ui.$('download').onclick();
+    const firstMix = ui.urls.find(u => u.url === ui.downloads.at(-1).url).blob;
+    await ui.$('saveProject').onclick();
+    assert.match(ui.$('status').textContent, /Saved original recordings/, ui.$('warning').textContent);
+    const session = ui.urls.find(u => u.url === ui.downloads.at(-1).url).blob;
+    assert.equal(ui.downloads.at(-1).name, 'personal-voice-choir.choir.json');
+    assert.equal(session.type, 'application/json');
+    const restored = page();
+    await restored.$('openProject').onchange({ target: { files: [session] } });
+    assert.match(restored.$('status').textContent, /Session restored locally/);
+    assert.equal(restored.$('phraseMode').checked, true);
+    assert.equal(restored.$('melodyTrack').value, '1');
+    assert.equal(findByTagField(restored.$('tagRows').children[0], 'start').value, 0.02);
+    restored.$('saveOriginal').onclick();
+    const restoredOriginal = restored.urls.find(u => u.url === restored.downloads.at(-1).url).blob;
+    assert.deepEqual(Buffer.from(await restoredOriginal.arrayBuffer()), Buffer.from(await original.arrayBuffer()));
+    await restored.$('render').onclick();
+    assert.equal(restored.$('listen').disabled, false, restored.$('warning').textContent);
+    restored.$('download').onclick();
+    const secondMix = restored.urls.find(u => u.url === restored.downloads.at(-1).url).blob;
+    assert.deepEqual(Buffer.from(await firstMix.arrayBuffer()), Buffer.from(await secondMix.arrayBuffer()));
+    await restored.$('openProject').onchange({ target: { files: [new Blob(['{bad'])] } });
+    assert.match(restored.$('warning').textContent, /existing session retained/);
+    assert.equal(restored.$('phraseMode').checked, true);
+    const corrupted = JSON.parse(await session.text()); corrupted.tags[0][1].pop();
+    await restored.$('openProject').onchange({ target: { files: [new Blob([JSON.stringify(corrupted)])] } });
+    assert.match(restored.$('warning').textContent, /tags do not match the score/);
+    assert.equal(findByTagField(restored.$('tagRows').children[0], 'start').value, 0.02);
+});
+
+test('waveform drag and move controls place a source segment under the selected written note', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'take.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    ui.$('waveStart').value = '0'; ui.$('waveEnd').value = '1';
+    const wave = ui.$('tagWave'); wave.getBoundingClientRect = () => ({ left: 0, width: 900 });
+    wave.onpointerdown({ clientX: 180, pointerId: 1 });
+    wave.onpointerup({ clientX: 360, pointerId: 1 });
+    assert.equal(findByTagField(ui.$('tagRows').children[0], 'start').value, 0.2);
+    assert.equal(findByTagField(ui.$('tagRows').children[0], 'end').value, 0.4);
+    const row = ui.$('tagRows').children[0];
+    row.children.find(child => child.textContent === '50 ms →').onclick();
+    assert.equal(findByTagField(ui.$('tagRows').children[0], 'start').value, 0.25);
+    const preview = ui.$('tagRows').children[0].children.find(child => child.textContent === 'Hear tagged source');
+    await preview.onclick();
+    assert.equal(ui.$('tagPlayer').currentTime, 0.25);
+});
+
+test('one imported take can be tagged separately for all four independent SATB score tracks', async () => {
+    const ui = page();
+    await ui.$('midi').onchange({ target: { files: [{ arrayBuffer: async () => midi() }] } });
+    const file = new Blob([Studio.wav([new Float32Array(24000)], 24000)], { type: 'audio/wav' });
+    Object.assign(file, { name: 'one-take.wav' });
+    await ui.$('wav').onchange({ target: { files: [file] } });
+    const mode = ui.$('arrangementMode'); mode.value = 'choir'; mode.onchange();
+    ui.$('phraseMode').checked = true; ui.$('phraseMode').onchange();
+    for (let i = 0; i < 4; i++) {
+        ui.$('tagVoice').value = String(i); ui.$('tagVoice').onchange();
+        assert.match(ui.$('tagInfo').textContent, new RegExp(['Soprano', 'Alto', 'Tenor', 'Bass'][i]));
+        ui.$('fillTags').onclick();
+        assert.match(ui.$('tagInfo').textContent, /0 untagged/);
+    }
+    await ui.$('render').onclick();
+    assert.equal(ui.$('listen').disabled, false, ui.$('warning').textContent);
+    assert.match(ui.$('status').textContent, /Rendered/);
+    await ui.$('saveProject').onclick();
+    const session = ui.urls.find(u => u.url === ui.downloads.at(-1).url).blob;
+    const restored = page();
+    await restored.$('openProject').onchange({ target: { files: [session] } });
+    assert.equal(restored.$('arrangementMode').value, 'choir');
+    await restored.$('render').onclick();
+    assert.equal(restored.$('listen').disabled, false, restored.$('warning').textContent);
 });
 
 test('four imported source files map one-to-one in picker order', async () => {

@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Personal Voice Choir Studio — experimental</title>
 <style>
-:root{font-family:system-ui,sans-serif;color:#e6e8ec;background:#171b24}*{box-sizing:border-box}body{max-width:1100px;margin:0 auto;padding:26px}h1{margin-bottom:4px}p,small{color:#c2cad8;line-height:1.55}section,article{background:#242b38;border:1px solid #414c60;border-radius:12px;padding:16px;margin:14px 0}label{display:inline-grid;gap:5px;margin:6px 12px 6px 0;font-size:.9rem}input,select,button{background:#101826;color:#fff;border:1px solid #77859d;border-radius:6px;padding:7px}input[type=range]{padding:0;width:115px}button{cursor:pointer;background:#314d82}button:hover{background:#456dad}button:disabled{opacity:.5}header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}.parts article{margin:0}#warning{color:#ffd69c;white-space:pre-wrap}#status{color:#a9dfc1}audio{max-width:100%}a{color:#9dc2ff}summary{cursor:pointer;padding:10px}.danger{background:#573b38}
+:root{font-family:system-ui,sans-serif;color:#e6e8ec;background:#171b24}*{box-sizing:border-box}body{max-width:1100px;margin:0 auto;padding:26px}h1{margin-bottom:4px}p,small{color:#c2cad8;line-height:1.55}section,article{background:#242b38;border:1px solid #414c60;border-radius:12px;padding:16px;margin:14px 0}label{display:inline-grid;gap:5px;margin:6px 12px 6px 0;font-size:.9rem}input,select,button{background:#101826;color:#fff;border:1px solid #77859d;border-radius:6px;padding:7px}input[type=range]{padding:0;width:115px}button{cursor:pointer;background:#314d82}button:hover{background:#456dad}button:disabled{opacity:.5}header{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}.parts article{margin:0}#warning{color:#ffd69c;white-space:pre-wrap}#status{color:#a9dfc1}audio{max-width:100%}a{color:#9dc2ff}summary{cursor:pointer;padding:10px}.danger{background:#573b38}.tag-row{display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid #414c60;padding:5px;gap:4px}.tag-row label{margin:2px}.tag-row input{width:88px}#tagWave{width:100%;height:110px;background:#101826;border:1px solid #77859d;border-radius:6px}
 </style></head><body>
 <h1>Personal Voice Choir Studio <small>experimental · offline</small></h1>
 <p>Start with <strong>one singing recording</strong> and a MIDI export of your score. Sing one written part alone, layer that melody in unison, or use the same recording for four <em>independently written</em> score parts. Notes and tempo come from the score export; the recording supplies timbre. This offline vowel prototype does not synthesize lyrics or claim realistic voices. Wide pitch shifts may sound unnatural.</p>
@@ -19,6 +19,11 @@
 <label>Four unison timbres<audio controls src="examples/single-source-unison.wav"></audio></label>
 <label>Four independently written parts<audio controls src="examples/single-source-four-written-parts.wav"></audio></label>
 <p>To reproduce: import that one WAV, load <code>examples/four-independent-real-registers.mid</code>, choose Bass solo or unison, then choose SATB and click “Use this recording for all SATB parts.” This does not create harmony or new singers from a solo recording.</p></section></details>
+<details><summary>Hear a real recording manually tagged to two written notes</summary><section>
+<p>One licensed VocalSet tenor vowel is tagged at 0.02–0.35 s and 0.40–0.63 s; its two ranges are fitted to separate Tenor notes with a written rest between them. This source is a vowel, <strong>not a lyric phrase or a consonant-quality evaluation</strong>. Download the <a href="examples/tagged-real-tenor.choir.json" download="tagged-real-tenor.choir.json">ready-to-open offline session</a>, then select it under “Open saved session” below. <a href="examples/tagged-real-tenor-metrics.json">Measured F0 and tag times</a> · <a href="examples/vocalset/ATTRIBUTION.md">CC BY 4.0 attribution</a>.</p>
+<label>Unchanged source<audio controls src="examples/vocalset/tenor-m2-long-a.wav"></audio></label>
+<label>Tagged result<audio controls src="examples/after-tagged-real-tenor.wav"></audio></label>
+</section></details>
 <section><h2>1 · Source recordings</h2>
 <label>Import WAV (mono or stereo)<input id="wav" type="file" accept=".wav,audio/wav" multiple></label>
 <button id="record">Record microphone</button><button id="stop" disabled>Stop recording</button>
@@ -33,8 +38,24 @@
 <label>Solo voice character <select id="soloVoice"><option value="0">Soprano</option><option value="1">Alto</option><option value="2">Tenor</option><option value="3">Bass</option></select></label>
 <p id="modeInfo">SATB requires four different score tracks. Each can use the same recorded voice, but every part follows its own written notes and rests.</p>
 <p>Set each part's source, character and volume below. In SATB mode map four different tracks or use the one-click shared-source button; in solo/unison modes the melody and shared recording above take precedence. Pitch correction at 100% targets written pitch; lowering it intentionally relaxes that guarantee.</p><div class="parts" id="parts"></div></section>
-<section><h2>4 · Listen and export</h2><button id="render">Render full score (up to 4 minutes)</button> <button id="listen" disabled>Play processed</button> <button id="download" disabled>Download processed WAV</button>
+<section><h2>4 · Optional: tag a sung take to the written notes</h2>
+<p>For a recording of a sung phrase, mark which <strong>source time range</strong> belongs to each written note. Drag across the waveform to set the selected note's range, or enter start/end seconds and move it ±50 ms. The score still supplies note pitch, onset, length and rests. The source range is fitted to that note's duration; the center is pitch-shifted while short original attack/release portions remain. This is experimental: it cannot identify syllables automatically and may distort consonants, vowels or extreme bass/treble shifts.</p>
+<label><input id="phraseMode" type="checkbox"> Use tagged singing ranges instead of repeating one vowel</label>
+<label>Part to tag <select id="tagVoice"><option value="0">Soprano</option><option value="1">Alto</option><option value="2">Tenor</option><option value="3">Bass</option></select></label>
+<button id="fillTags">Guess sequential ranges from note lengths</button> <button id="clearTags">Clear this part's tags</button>
+<p id="tagInfo">Load a MIDI and a recording, then choose a part. Guessed ranges are only a starting point; check each by listening.</p>
+<label>Waveform from (s) <input id="waveStart" type="number" min="0" step="0.05" value="0"></label>
+<label>Waveform to (s) <input id="waveEnd" type="number" min="0" step="0.05" value="5"></label>
+<canvas id="tagWave" width="900" height="110" aria-label="Recording waveform with tagged source ranges"></canvas>
+<p>Click a note row to select it; drag across the waveform to set that note's source range. Adjust the zoom above for precise tags.</p>
+<p id="tagPageInfo"></p><button id="tagPrevious">Previous 20 notes</button> <button id="tagNext">Next 20 notes</button><div id="tagRows"></div>
+<audio id="tagPlayer" controls aria-label="Preview original tagged source range"></audio>
+<p>All written notes of every active part must have a valid tag in this mode. In unison, all four characters share the same tagged melody; in SATB, tag each independent part. A note's original recording remains available unchanged.</p>
+</section>
+<section><h2>5 · Save, listen and export</h2>
+<button id="saveProject">Save self-contained session (.choir.json)</button> <label>Open saved session <input id="openProject" type="file" accept=".json,application/json"></label>
+<p>Session includes the original recording bytes, MIDI score, note tags and voice settings. It stays on your device; save it before closing this page. Processed audio is saved separately as WAV.</p><button id="render">Render full score (up to 4 minutes)</button> <button id="listen" disabled>Play processed</button> <button id="download" disabled>Download processed WAV</button>
 <p id="status" role="status"></p><p id="warning" role="alert"></p>
 <audio id="player" controls></audio><p>To compare instantly, use <em>Play original</em> or <em>Play processed</em> above. Solo/mute and rerender to inspect one part. The original source and processed mix remain separate.</p></section>
-<script src="choir.js"></script><script src="studio.js"></script>
+<script src="choir.js"></script><script src="project.js"></script><script src="studio.js"></script>
 </body></html>

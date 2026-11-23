@@ -1,0 +1,29 @@
+{
+  "methodology": "one real ~0.8s licensed tenor vowel manually tagged to two score notes; objective F0 only, NOT word preservation or realism",
+  "source": "VocalSet 1.2 CC BY 4.0: vocalset/tenor-m2-long-a.wav; see vocalset/ATTRIBUTION.md",
+  "warnings": [],
+  "measurements": [
+    {
+      "note": 1,
+      "midiPitch": 60,
+      "scoreStart": 0.25,
+      "scoreEnd": 0.5,
+      "sourceStart": 0.02,
+      "sourceEnd": 0.35,
+      "targetHz": 261.63,
+      "measuredHz": 261.54,
+      "errorCents": -0.5
+    },
+    {
+      "note": 2,
+      "midiPitch": 62,
+      "scoreStart": 0.75,
+      "scoreEnd": 0.875,
+      "sourceStart": 0.4,
+      "sourceEnd": 0.63,
+      "targetHz": 293.66,
+      "measuredHz": 294.14,
+      "errorCents": 2.8
+    }
+  ]
+}

@@ -5,8 +5,10 @@
 (() => {
     'use strict';
     const $ = id => document.getElementById(id), names = ['Soprano', 'Alto', 'Tenor', 'Bass'];
-    const rate = 24000, recordings = [], assignments = [], Studio = window.ChoirStudio;
-    let score, context, mediaRecorder, micStream, processedUrl, recordPending = false, renderPending = false, revision = 0;
+    const rate = 24000, recordings = [], assignments = [], Studio = window.ChoirStudio, Project = window.ChoirProject;
+    const tags = Object.create(null);
+    let score, midiBytes, context, mediaRecorder, micStream, processedUrl, recordPending = false, renderPending = false, revision = 0;
+    let tagPage = 0, selectedNote = 0, waveDrag = null, projectPending = false;
     function invalidateProcessed() {
         ++revision;
         if (processedUrl) {
@@ -18,7 +20,7 @@
     async function audio() { if (!context) context = new AudioContext({ sampleRate: rate }); await context.resume(); return context; }
     const status = text => { $('status').textContent = text; };
     const warning = text => { $('warning').textContent = text; };
-    async function addRecording(blob, name) {
+    async function decodeRecording(blob, name) {
         const ctx = await audio();
         const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
         if (buffer.duration < 0.06 || buffer.duration > 90) throw Error('Recording must be between 60 ms and 90 seconds');
@@ -27,12 +29,13 @@
             const channel = buffer.getChannelData(c);
             for (let i = 0; i < samples.length; ++i) samples[i] += channel[i] / buffer.numberOfChannels;
         }
-        // Never overwrite or re-encode the original capture. The PCM working
-        // buffer is separate from the user's original Blob.
-        const saved = blob;
+        // Keep the exact original Blob. The mono PCM is only for processing.
         const suggestion = buffer.duration > 1.2 ? Studio.suggestVowel(samples, rate) : null;
-        invalidateProcessed();
-        const index = recordings.push({ name, samples, blob: saved, suggestion, url: URL.createObjectURL(saved) }) - 1;
+        return { name, samples, blob, suggestion };
+    }
+    function registerRecording(record) {
+        const index = recordings.push({ ...record, url: URL.createObjectURL(record.blob) }) - 1;
+        const { name, suggestion, samples } = record;
         for (const selector of ['originalChoice', 'commonSource']) {
             const choice = document.createElement('option'); choice.value = String(index); choice.textContent = name; $(selector).append(choice);
         }
@@ -41,7 +44,13 @@
         refresh();
         status(suggestion ? `Source ready. Automatically selected a steady vowel at ${suggestion.start}–${suggestion.end} s; enter crop times to override it.`
             : 'Source ready. For singing phrases, choose a steady vowel region; pitch detection can be overridden in Hz.');
-        if (buffer.duration > 1.2 && !suggestion) warning('No reliable sustained vowel was found in the first 8 seconds. Select vowel start/end manually, or use a clear sustained take.');
+        if (samples.length / rate > 1.2 && !suggestion) warning('No reliable sustained vowel was found in the first 8 seconds. Select vowel start/end manually, or use a clear sustained take.');
+        updateTags();
+    }
+    async function addRecording(blob, name) {
+        const record = await decodeRecording(blob, name);
+        invalidateProcessed();
+        registerRecording(record);
     }
     $('wav').onchange = async event => {
         const first = recordings.length;
@@ -118,8 +127,11 @@
     };
     $('midi').onchange = async event => {
         try {
-            const parsed = Studio.parseMidi(await event.target.files[0].arrayBuffer());
-            invalidateProcessed(); score = parsed;
+            const bytes = new Uint8Array(await event.target.files[0].arrayBuffer());
+            const parsed = Studio.parseMidi(bytes);
+            invalidateProcessed(); score = parsed; midiBytes = bytes;
+            for (const key of Object.keys(tags)) delete tags[key];
+            tagPage = selectedNote = 0;
             const available = Studio.noteTrackIndices(score);
             // A tempo-only conductor track must not duplicate Soprano/Alto.
             assignments.forEach((part, i) => { part.track = available[i] ?? -1; });
@@ -196,9 +208,26 @@
                 : 'Unison: all four characters follow the SAME written melody, not SATB harmony. Use SATB mode only after writing four independent parts.';
         document.querySelectorAll('#parts select[data-field="track"]').forEach(input => { input.disabled = !harmony; });
         document.querySelectorAll('#parts select[data-field="recording"]').forEach(input => { input.disabled = !harmony; });
+        updateTags();
     }
-    $('arrangementMode').onchange = () => { invalidateProcessed(); updateMode(); };
-    for (const selector of ['melodyTrack', 'commonSource', 'soloVoice']) $(selector).onchange = invalidateProcessed;
+    function syncSharedSource() {
+        const mode = $('arrangementMode').value;
+        if (mode === 'choir') return;
+        const source = Number($('commonSource').value);
+        if (!recordings[source]) return;
+        const indices = mode === 'solo' ? [Number($('soloVoice').value)] : [0, 1, 2, 3];
+        for (const i of indices) {
+            const part = assignments[i];
+            if (part && part.recording !== source) {
+                part.recording = source;
+                part.sourceHz = part.cropStart = part.cropEnd = 0;
+            }
+        }
+        refresh();
+    }
+    $('arrangementMode').onchange = () => { invalidateProcessed(); syncSharedSource(); updateMode(); };
+    $('melodyTrack').onchange = invalidateProcessed;
+    for (const selector of ['commonSource', 'soloVoice']) $(selector).onchange = () => { invalidateProcessed(); syncSharedSource(); };
     $('assignAll').onclick = () => {
         const source = Number($('commonSource').value);
         if (!recordings[source]) return warning('Choose a recording first');
@@ -212,6 +241,159 @@
         refresh();
         status(`Assigned ${recordings[source].name} to all four voice characters; choose four written parts for SATB harmony.`);
     };
+    function tagTarget() {
+        const mode = $('arrangementMode').value;
+        const i = mode === 'solo' ? Number($('soloVoice').value) : mode === 'unison' ? 0 : Number($('tagVoice').value);
+        const part = assignments[i];
+        const track = mode === 'choir' ? part?.track : Number($('melodyTrack').value);
+        const recording = mode === 'choir' ? part?.recording : Number($('commonSource').value);
+        const source = recordings[recording], notes = score?.tracks[track]?.notes;
+        return source && notes?.length ? { track, recording, source, notes, name: part.name } : null;
+    }
+    const tagKey = (track, recording) => `${track}:${recording}`;
+    function drawWaveform(target) {
+        const canvas = $('tagWave'), ctx = canvas.getContext?.('2d');
+        if (!ctx) return; // DOM test stand-in or browser without canvas
+        const { width, height } = canvas;
+        ctx.clearRect(0, 0, width, height);
+        if (!target) return;
+        const from = Number($('waveStart').value), to = Number($('waveEnd').value);
+        if (!(from >= 0 && to > from)) return;
+        const samples = target.source.samples, marks = tags[tagKey(target.track, target.recording)] || [];
+        for (let x = 0; x < width; ++x) {
+            const a = Math.floor((from + (to - from) * x / width) * rate);
+            const b = Math.min(samples.length, Math.ceil((from + (to - from) * (x + 1) / width) * rate));
+            let peak = 0;
+            for (let j = a; j < b; j += Math.max(1, Math.floor((b - a) / 128))) peak = Math.max(peak, Math.abs(samples[j] || 0));
+            ctx.fillStyle = '#8ab5dc'; ctx.fillRect(x, height / 2 - peak * height * 0.47, 1, Math.max(1, peak * height * 0.94));
+        }
+        for (let i = tagPage * 20; i < Math.min(marks.length, (tagPage + 1) * 20); ++i) {
+            const mark = marks[i]; if (!mark) continue;
+            const x = Math.max(0, (mark.start - from) / (to - from) * width);
+            const right = Math.min(width, (mark.end - from) / (to - from) * width);
+            if (right <= x) continue;
+            ctx.fillStyle = i === selectedNote ? 'rgba(255,190,95,.45)' : 'rgba(105,220,145,.25)';
+            ctx.fillRect(x, 0, right - x, height);
+        }
+    }
+    function updateTags() {
+        const mode = $('arrangementMode').value;
+        $('tagVoice').disabled = mode !== 'choir';
+        if (mode === 'solo') $('tagVoice').value = $('soloVoice').value;
+        if (mode === 'unison') $('tagVoice').value = '0';
+        const target = tagTarget(), rows = $('tagRows'); rows.replaceChildren();
+        if (!target) { $('tagInfo').textContent = 'Load a MIDI and recording, then choose a written part to tag.';
+            $('tagPageInfo').textContent = ''; drawWaveform(null); return; }
+        const { track, recording, source, notes, name } = target, key = tagKey(track, recording);
+        const marks = tags[key] || [], missing = notes.reduce((n, _, i) => n + (!marks[i] ? 1 : 0), 0);
+        tagPage = Math.min(tagPage, Math.floor((notes.length - 1) / 20));
+        if (selectedNote < tagPage * 20 || selectedNote >= Math.min(notes.length, (tagPage + 1) * 20)) selectedNote = tagPage * 20;
+        $('tagInfo').textContent = `${name} · written track ${track + 1} · ${source.name} · ${notes.length} notes (${missing} untagged). Source ranges are seconds in the unchanged recording.`;
+        $('tagPageInfo').textContent = `Notes ${tagPage * 20 + 1}–${Math.min(notes.length, (tagPage + 1) * 20)} of ${notes.length}`;
+        $('tagPrevious').disabled = tagPage === 0;
+        $('tagNext').disabled = (tagPage + 1) * 20 >= notes.length;
+        for (let i = tagPage * 20; i < Math.min(notes.length, (tagPage + 1) * 20); ++i) {
+            const row = document.createElement('div'), note = notes[i], mark = marks[i];
+            row.className = 'tag-row';
+            const select = document.createElement('button'); select.textContent = `Note ${i + 1} · MIDI ${note.pitch} · score ${note.startSeconds.toFixed(2)}–${note.endSeconds.toFixed(2)} s`;
+            select.onclick = () => {
+                selectedNote = i;
+                if (marks[i]) {
+                    $('waveStart').value = Math.max(0, +(marks[i].start - 0.3).toFixed(2));
+                    $('waveEnd').value = Math.min(source.samples.length / rate, +(marks[i].end + 0.3).toFixed(2));
+                }
+                drawWaveform(target);
+            };
+            row.append(select);
+            const inputs = {};
+            for (const [field, label] of [['start', 'Source from'], ['end', 'Source to'], ['hz', 'Hz (0 auto)']]) {
+                const input = document.createElement('input'); input.type = 'number'; input.step = 0.001; input.min = 0;
+                input.value = mark ? +mark[field].toFixed(4) : field === 'hz' ? 0 : '';
+                input.dataset.tagField = field; input.dataset.noteIndex = i;
+                const wrapper = document.createElement('label'); wrapper.textContent = label; wrapper.append(input); row.append(wrapper); inputs[field] = input;
+            }
+            row.onchange = () => {
+                if (inputs.start.value === '' || inputs.end.value === '') return;
+                const start = Number(inputs.start.value), end = Number(inputs.end.value), hz = Number(inputs.hz.value);
+                if (!(Number.isFinite(start) && Number.isFinite(end) && Number.isFinite(hz)
+                    && start >= 0 && end <= source.samples.length / rate && end > start && hz >= 0)) {
+                    return warning('Source range must have a start before its end and lie within the recording.');
+                }
+                if (!tags[key]) tags[key] = Array(notes.length).fill(null);
+                tags[key][i] = { start, end, hz };
+                invalidateProcessed(); updateTags();
+            };
+            const move = delta => {
+                if (!marks[i]) return warning('Tag this note first');
+                const old = marks[i], shift = Math.max(-old.start, Math.min(delta, source.samples.length / rate - old.end));
+                marks[i] = { ...old, start: +(old.start + shift).toFixed(4), end: +(old.end + shift).toFixed(4) };
+                invalidateProcessed(); updateTags();
+            };
+            for (const [label, delta] of [['← 50 ms', -0.05], ['50 ms →', 0.05]]) {
+                const button = document.createElement('button'); button.textContent = label; button.onclick = () => move(delta); row.append(button);
+            }
+            const preview = document.createElement('button'); preview.textContent = 'Hear tagged source';
+            preview.onclick = async () => {
+                const range = tags[key]?.[i]; if (!range) return warning('Tag this note first');
+                const player = $('tagPlayer'); player.pause();
+                try {
+                    if (player.src !== source.url) player.src = source.url;
+                    if (player.addEventListener && player.readyState < 1) {
+                        await new Promise((resolve, reject) => {
+                            const ready = () => { player.removeEventListener('error', failed); resolve(); };
+                            const failed = () => { player.removeEventListener('loadedmetadata', ready); reject(Error('Cannot preview source audio')); };
+                            player.addEventListener('loadedmetadata', ready, { once: true });
+                            player.addEventListener('error', failed, { once: true });
+                        });
+                    }
+                    player.currentTime = range.start;
+                    player.ontimeupdate = () => { if (player.currentTime >= range.end) player.pause(); };
+                    await player.play();
+                } catch (err) { warning(err.message); }
+            };
+            row.append(preview); rows.append(row);
+        }
+        drawWaveform(target);
+    }
+    $('tagVoice').onchange = () => { tagPage = selectedNote = 0; updateTags(); };
+    $('phraseMode').onchange = invalidateProcessed;
+    $('melodyTrack').onchange = () => { invalidateProcessed(); tagPage = selectedNote = 0; updateTags(); };
+    $('waveStart').onchange = $('waveEnd').onchange = () => drawWaveform(tagTarget());
+    $('tagPrevious').onclick = () => { tagPage = Math.max(0, tagPage - 1); selectedNote = tagPage * 20; updateTags(); };
+    $('tagNext').onclick = () => { ++tagPage; selectedNote = tagPage * 20; updateTags(); };
+    $('fillTags').onclick = () => {
+        const target = tagTarget(); if (!target) return warning('Load a score and recording first');
+        tags[tagKey(target.track, target.recording)] = Studio.distributeTags(target.notes, target.source.samples.length / rate);
+        invalidateProcessed(); updateTags();
+        status('Guessed source ranges in note order. Listen and adjust every tag; rests in the score remain silent.');
+    };
+    $('clearTags').onclick = () => {
+        const target = tagTarget(); if (!target) return;
+        delete tags[tagKey(target.track, target.recording)]; invalidateProcessed(); updateTags();
+    };
+    const canvas = $('tagWave');
+    canvas.onpointerdown = event => {
+        const target = tagTarget(); if (!target) return;
+        const rect = canvas.getBoundingClientRect(), from = Number($('waveStart').value), to = Number($('waveEnd').value);
+        if (!(to > from) || !rect.width) return;
+        waveDrag = { key: tagKey(target.track, target.recording), track: target.track, recording: target.recording,
+            note: selectedNote, start: Math.max(0, Math.min(target.source.samples.length / rate,
+                from + (event.clientX - rect.left) / rect.width * (to - from))) };
+        canvas.setPointerCapture?.(event.pointerId);
+    };
+    canvas.onpointerup = event => {
+        if (!waveDrag) return;
+        const drag = waveDrag; waveDrag = null;
+        const target = tagTarget(); if (!target || drag.key !== tagKey(target.track, target.recording)) return;
+        const rect = canvas.getBoundingClientRect(), from = Number($('waveStart').value), to = Number($('waveEnd').value);
+        const finish = Math.max(0, Math.min(target.source.samples.length / rate,
+            from + (event.clientX - rect.left) / rect.width * (to - from)));
+        const start = Math.min(drag.start, finish), end = Math.max(drag.start, finish);
+        if (end - start < 0.075) return warning('Drag at least 75 ms of source audio for this note; zoom in for precision.');
+        if (!tags[drag.key]) tags[drag.key] = Array(target.notes.length).fill(null);
+        tags[drag.key][drag.note] = { start, end, hz: tags[drag.key][drag.note]?.hz || 0 };
+        invalidateProcessed(); updateTags();
+    };
     refresh();
     $('render').onclick = async () => {
         if (renderPending) return;
@@ -221,6 +403,16 @@
             const mode = $('arrangementMode').value;
             const partSnapshot = Studio.arrangeParts(mode, score, assignments,
                 Number($('commonSource').value), Number($('melodyTrack').value), Number($('soloVoice').value));
+            if ($('phraseMode').checked) {
+                for (const part of partSnapshot) {
+                    if (part.mute || (partSnapshot.some(p => p.solo) && !part.solo)) continue;
+                    const marks = tags[tagKey(part.track, part.recording)], notes = score.tracks[part.track].notes;
+                    if (!marks || marks.length !== notes.length || marks.some(mark => !mark)) {
+                        throw Error(`${part.name}: tag every written note with a source range first. Select the part in step 4 or use Guess sequential ranges.`);
+                    }
+                    part.noteTags = marks.map(mark => ({ ...mark }));
+                }
+            }
             invalidateProcessed();
             const renderRevision = revision, renderScore = score;
             status('Rendering locally…'); warning(''); await new Promise(resolve => setTimeout(resolve, 20));
@@ -234,6 +426,74 @@
             warning(mix.warnings.slice(0, 8).join('\n') || 'Experimental vowel rendering: audition for artifacts; no convincing choir-timbre claim.');
         } catch (err) { status('Render failed'); warning(err.message); }
         finally { renderPending = false; $('render').disabled = false; }
+    };
+    $('saveProject').onclick = async () => {
+        if (projectPending) return;
+        projectPending = true; $('saveProject').disabled = true;
+        try {
+            if (!midiBytes || !recordings.length) throw Error('Load a MIDI and at least one recording before saving');
+            const controls = { mode: $('arrangementMode').value, melodyTrack: Number($('melodyTrack').value),
+                commonSource: Number($('commonSource').value), soloVoice: Number($('soloVoice').value),
+                tagVoice: Number($('tagVoice').value), phraseMode: $('phraseMode').checked };
+            const saveRevision = revision;
+            const json = await Project.encodeProject({ midiBytes: midiBytes.slice(), recordings: recordings.slice(),
+                parts: assignments.map(part => ({ ...part })), tags: Object.entries(tags).map(([key, marks]) =>
+                    [key, marks.map(mark => mark && { ...mark })]), controls });
+            if (saveRevision !== revision) throw Error('Settings changed while saving; save again');
+            const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+            const link = document.createElement('a'); link.href = url; link.download = 'personal-voice-choir.choir.json'; link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+            status('Saved original recordings, written MIDI, note tags and character settings in a local session file.');
+        } catch (err) { warning('Save failed: ' + err.message); }
+        finally { projectPending = false; $('saveProject').disabled = false; }
+    };
+    $('openProject').onchange = async event => {
+        if (projectPending) return;
+        projectPending = true;
+        try {
+            if (renderPending || recordPending || mediaRecorder) throw Error('Finish rendering or recording before opening a session');
+            const loadRevision = revision;
+            const file = event.target.files[0];
+            if (!file || file.size > 135 * 1024 * 1024) throw Error('Choose a choir session under 135 MB');
+            const saved = Project.decodeProject(await file.text()), parsed = Studio.parseMidi(saved.midiBytes);
+            const controls = saved.controls;
+            if (!parsed.tracks[controls.melodyTrack]?.notes.length || controls.commonSource < 0
+                || controls.commonSource >= saved.recordings.length || controls.soloVoice < 0 || controls.soloVoice > 3
+                || controls.tagVoice < 0 || controls.tagVoice > 3) throw Error('Saved session references missing score or voice');
+            for (const part of saved.parts) if (part.track < -1 || part.track >= parsed.tracks.length) throw Error('Saved part references missing track');
+            const staged = await Promise.all(saved.recordings.map(r => decodeRecording(r.blob, r.name)));
+            for (const [key, marks] of saved.tags) {
+                const [track, source] = key.split(':').map(Number);
+                if (!parsed.tracks[track]?.notes.length || marks.length !== parsed.tracks[track].notes.length
+                    || marks.some(mark => mark && mark.end > staged[source].samples.length / rate)) throw Error('Saved tags do not match the score or recording');
+            }
+            // Commit only after *all* blobs decode and all references validate.
+            if (loadRevision !== revision || renderPending || recordPending || mediaRecorder) {
+                throw Error('Current session changed while loading; retry the saved session');
+            }
+            invalidateProcessed(); $('player').pause(); $('player').src = ''; $('tagPlayer').pause(); $('tagPlayer').src = '';
+            recordings.forEach(r => URL.revokeObjectURL(r.url));
+            recordings.length = 0; assignments.length = 0;
+            for (const key of Object.keys(tags)) delete tags[key];
+            $('originalChoice').replaceChildren(); $('commonSource').replaceChildren();
+            score = parsed; midiBytes = saved.midiBytes;
+            for (const record of staged) registerRecording(record);
+            assignments.splice(0, assignments.length, ...saved.parts);
+            for (const [key, marks] of saved.tags) tags[key] = marks;
+            const melody = $('melodyTrack'); melody.replaceChildren();
+            Studio.noteTrackIndices(score).forEach(i => {
+                const option = document.createElement('option'); option.value = i;
+                option.textContent = `${i + 1}: ${score.tracks[i].name} (${score.tracks[i].notes.length} notes)`; melody.append(option);
+            });
+            $('arrangementMode').value = controls.mode; melody.value = String(controls.melodyTrack);
+            $('commonSource').value = String(controls.commonSource); $('soloVoice').value = String(controls.soloVoice);
+            $('tagVoice').value = String(controls.tagVoice); $('phraseMode').checked = controls.phraseMode;
+            $('scoreInfo').textContent = `Restored ${score.tracks.length} MIDI tracks with original audio and note tags from local session.`;
+            tagPage = selectedNote = 0;
+            $('waveStart').value = 0; $('waveEnd').value = Math.min(5, staged[controls.commonSource].samples.length / rate);
+            refresh(); warning(''); status('Session restored locally. Audition tags and render when ready.');
+        } catch (err) { warning('Open failed; existing session retained: ' + err.message); }
+        finally { projectPending = false; }
     };
     $('listen').onclick = async () => { $('player').pause(); $('player').src = processedUrl; await $('player').play(); status('Playing processed mix'); };
     $('download').onclick = () => { const a = document.createElement('a'); a.href = processedUrl; a.download = 'personal-voice-choir-experimental.wav'; a.click(); };

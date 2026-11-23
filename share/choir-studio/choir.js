@@ -213,8 +213,12 @@
         // Input epochs follow the singer's changing waveform phase rather
         // than a fixed period. Cache them across notes in renderSteps().
         const epochs = options.epochs || findEpochs(source, rate, sourceHz, options);
+        const grainCount = Math.ceil((frames + grain) / spacing);
         for (let outCenter = 0, n = 0; outCenter < frames + grain; outCenter += spacing, ++n) {
-            const inCenter = epochs[n % epochs.length];
+            const epochIndex = options.followSource
+                ? Math.min(epochs.length - 1, Math.floor(n * epochs.length / Math.max(1, grainCount)))
+                : n % epochs.length;
+            const inCenter = epochs[epochIndex];
             for (let j = -grain; j <= grain; ++j) {
                 const index = Math.round(outCenter + j);
                 if (index < 0 || index >= frames) continue;
@@ -226,6 +230,58 @@
         }
         for (let i = 0; i < frames; ++i) output[i] = weights[i] ? output[i] / weights[i] : 0;
         return output;
+    }
+
+    function taggedNote(source, rate, noteHz, frames, tag, settings = {}) {
+        const start = tag?.start, end = tag?.end;
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end > source.length / rate
+            || end - start < 0.075) throw Error('Tag a valid source range of at least 75 ms for every written note');
+        const begin = Math.round(start * rate), finish = Math.round(end * rate);
+        // Keep short unpitched syllable boundaries from the actual recording.
+        // Only the center is pitch-shifted. This is not phoneme alignment.
+        const attack = Math.min(Math.round(rate * 0.035), Math.floor((finish - begin) * 0.14));
+        const release = Math.min(Math.round(rate * 0.025), Math.floor((finish - begin) * 0.10));
+        const coreStart = begin + attack, coreEnd = finish - release;
+        const sourceHz = estimatePitch(source, rate, coreStart / rate, tag.hz || 0, coreEnd / rate);
+        if (!(sourceHz >= 65 && sourceHz <= 900)) throw Error('Tagged source pitch outside supported voiced range');
+        const attackFrames = Math.min(attack, Math.floor(frames * 0.16));
+        const releaseFrames = Math.min(release, Math.floor(frames * 0.12));
+        const overlap = Math.min(Math.round(rate * 0.006), Math.floor(attackFrames / 2), Math.floor(releaseFrames / 2));
+        const coreOffset = attackFrames - overlap, coreEndOut = frames - releaseFrames + overlap;
+        const raw = vowelNote(source, rate, sourceHz, noteHz, coreEndOut - coreOffset,
+            { ...settings, cropStart: coreStart / rate, cropEnd: coreEnd / rate, followSource: true });
+        const out = new Float32Array(frames);
+        out.set(raw, coreOffset);
+        const interpolate = x => {
+            const at = Math.min(finish - 1, Math.max(begin, x)), i = Math.floor(at);
+            return (source[i] || 0) * (1 - (at - i)) + (source[Math.min(finish - 1, i + 1)] || 0) * (at - i);
+        };
+        for (let i = 0; i < attackFrames; ++i) {
+            const sample = interpolate(begin + i * attack / Math.max(1, attackFrames));
+            const blend = i < coreOffset ? 0 : (i - coreOffset + 1) / (overlap + 1);
+            out[i] = sample * (1 - blend) + out[i] * blend;
+        }
+        for (let i = frames - releaseFrames; i < frames; ++i) {
+            const sample = interpolate(coreEnd + (i - (frames - releaseFrames)) * release / Math.max(1, releaseFrames));
+            const blend = i < frames - releaseFrames + overlap
+                ? (i - (frames - releaseFrames) + 1) / (overlap + 1) : 1;
+            out[i] = out[i] * (1 - blend) + sample * blend;
+        }
+        return { samples: out, sourceHz };
+    }
+
+    // Fill source windows in score-note order. This is only an editable first
+    // guess; rests in MIDI never consume source audio. No audio transcription.
+    function distributeTags(notes, duration) {
+        if (!Array.isArray(notes) || !notes.length || !Number.isFinite(duration) || duration <= 0) throw Error('Choose a written track and a source');
+        const lengths = notes.map(n => n.endSeconds - n.startSeconds);
+        if (lengths.some(x => !Number.isFinite(x) || x <= 0)) throw Error('Invalid written note length');
+        const total = lengths.reduce((a, b) => a + b, 0);
+        let at = 0;
+        return lengths.map((length, i) => {
+            const start = at; at += duration * length / total;
+            return { start, end: i === lengths.length - 1 ? duration : Math.min(duration, at), hz: 0 };
+        });
     }
 
     function shape(samples, rate, settings = {}, seed = 1) {
@@ -304,17 +360,30 @@
             if (!notes) throw Error('Missing MIDI track for ' + part.name);
             const automatic = !part.cropStart && !part.cropEnd && source.suggestion;
             const region = automatic ? { ...part, cropStart: source.suggestion.start, cropEnd: source.suggestion.end } : part;
-            const sourceHz = estimatePitch(source.samples, rate, region.cropStart || 0, part.sourceHz || 0, region.cropEnd || 0);
-            const noteOptions = { ...region, epochs: findEpochs(source.samples, rate, sourceHz, region) };
+            const sourceHz = part.noteTags ? 0 : estimatePitch(source.samples, rate, region.cropStart || 0, part.sourceHz || 0, region.cropEnd || 0);
+            const noteOptions = part.noteTags ? null : { ...region, epochs: findEpochs(source.samples, rate, sourceHz, region) };
+            if (part.noteTags && part.noteTags.length !== notes.length) throw Error(part.name + ': source tags do not match written note count');
             const pan = clamp(part.pan ?? 0, -1, 1), volume = clamp(part.volume ?? 0.7, 0, 1);
             const gainL = Math.cos((pan + 1) * Math.PI / 4) * volume, gainR = Math.sin((pan + 1) * Math.PI / 4) * volume;
-            for (const note of notes) {
-                const noteHz = hz(note.pitch), ratio = noteHz / sourceHz;
-                if (ratio > 1.7 || ratio < 0.59) warnings.push(part.name + ' note ' + note.pitch + ': extreme source-to-score pitch shift; use another recording in this register.');
+            for (let noteIndex = 0; noteIndex < notes.length; ++noteIndex) {
+                const note = notes[noteIndex], noteHz = hz(note.pitch);
                 if ((part.correction ?? 1) < 1) warnings.push(part.name + ': correction below 100% does not preserve the written pitch.');
                 const start = Math.round(note.startSeconds * rate), stop = Math.min(frames, Math.round(note.endSeconds * rate));
                 if (start >= frames || stop <= start) continue;
-                const raw = vowelNote(source.samples, rate, sourceHz, noteHz, stop - start, noteOptions);
+                let tagged = null;
+                if (part.noteTags) {
+                    try { tagged = taggedNote(source.samples, rate, noteHz, stop - start, part.noteTags[noteIndex], part); }
+                    catch (err) { throw Error(part.name + ' note ' + (noteIndex + 1) + ': ' + err.message); }
+                }
+                const detectedHz = tagged ? tagged.sourceHz : sourceHz, ratio = noteHz / detectedHz;
+                if (ratio > 1.7 || ratio < 0.59) warnings.push(part.name + ' note ' + note.pitch + ': extreme source-to-score pitch shift; use another recording in this register.');
+                if (tagged) {
+                    const sourceDuration = part.noteTags[noteIndex].end - part.noteTags[noteIndex].start;
+                    const stretch = (note.endSeconds - note.startSeconds) / sourceDuration;
+                    if (stretch > 2.5 || stretch < 0.4) warnings.push(part.name + ' note ' + (noteIndex + 1)
+                        + ': extreme time stretch (' + stretch.toFixed(1) + '×); adjust this source tag.');
+                }
+                const raw = tagged ? tagged.samples : vowelNote(source.samples, rate, sourceHz, noteHz, stop - start, noteOptions);
                 const voiced = shape(raw, rate, part, (partIndex + 1) * 941 + (part.variation ? note.tick : 0));
                 const fade = Math.max(1, Math.round(rate * 0.012));
                 for (let i = 0; i < voiced.length; ++i) {
@@ -365,5 +434,5 @@
         for (let i = 0; i < frames; ++i) for (const ch of channels) { view.setInt16(at, Math.round(clamp(ch[i] || 0, -1, 1) * 32767), true); at += 2; }
         return output;
     }
-    return { parseMidi, noteTrackIndices, arrangeParts, estimatePitch, suggestVowel, vowelNote, shape, render, renderAsync, wav, defaults, hz };
+    return { parseMidi, noteTrackIndices, arrangeParts, estimatePitch, suggestVowel, vowelNote, taggedNote, distributeTags, shape, render, renderAsync, wav, defaults, hz };
 });
