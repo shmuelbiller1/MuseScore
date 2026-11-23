@@ -324,7 +324,7 @@ jobs:
 
     - name: Test offline choir renderer on Windows
       shell: bash
-      run: node --test share/choir-studio/tests/choir.test.cjs
+      run: node --test share/choir-studio/tests/*.test.cjs
 
     - name: Override muse_framework
       if: inputs.framework_ref != '' && inputs.framework_repo != ''

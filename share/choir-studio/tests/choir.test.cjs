@@ -7,34 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const Studio = require('../choir.js');
-const rate = 24000;
-function source(frequency = 220, length = 0.65) {
-    return Float32Array.from({ length: Math.floor(rate * length) }, (_, i) => {
-        const t = i / rate, phase = 2 * Math.PI * frequency * t;
-        return 0.22 * (Math.sin(phase) + 0.32 * Math.sin(2 * phase) + 0.18 * Math.sin(3 * phase));
-    });
-}
-function v(n) { const bytes = [n & 127]; while ((n >>= 7)) bytes.unshift((n & 127) | 128); return bytes; }
-function be(n, width) { return Array.from({ length: width }, (_, i) => (n >>> (8 * (width - i - 1))) & 255); }
-function chunk(label, bytes) { return [...Buffer.from(label), ...be(bytes.length, 4), ...bytes]; }
-function midi() {
-    const header = [...Buffer.from('MThd'), ...be(6, 4), ...be(1, 2), ...be(5, 2), ...be(480, 2)];
-    const tempo = [0, 255, 81, 3, 7, 161, 32, ...v(480), 255, 81, 3, 3, 208, 144, 0, 255, 47, 0];
-    const tracks = [chunk('MTrk', tempo)];
-    // Distinct pitches, different onsets, independent note gates and rests.
-    for (let part = 0; part < 4; ++part) {
-        const start = part * 120, pitch = [69, 64, 60, 57][part];
-        const name = Buffer.from(['Soprano', 'Alto', 'Tenor', 'Bass'][part]);
-        const bytes = [0, 255, 3, name.length, ...name,
-            ...v(start), 144, pitch, 85 - part * 8,
-            ...v(240), 128, pitch, 0,
-            ...v(480), 144, pitch + 2, 91,
-            ...v(240), 128, pitch + 2, 0,
-            0, 255, 47, 0];
-        tracks.push(chunk('MTrk', bytes));
-    }
-    return Uint8Array.from([...header, ...tracks.flat()]);
-}
+const { rate, source, midi } = require('../examples/fixtures.cjs');
 function amplitude(samples, begin, end) {
     let sum = 0; for (let i = Math.floor(begin * rate); i < Math.min(samples.length, Math.floor(end * rate)); ++i) sum += samples[i] ** 2;
     return Math.sqrt(sum / Math.max(1, Math.floor((end - begin) * rate)));
@@ -42,6 +15,7 @@ function amplitude(samples, begin, end) {
 test('MIDI score drives independent part onsets, rests, durations and tempo changes', () => {
     const parsed = Studio.parseMidi(midi());
     assert.equal(parsed.tracks.filter(t => t.notes.length).length, 4);
+    assert.deepEqual(Studio.noteTrackIndices(parsed), [1, 2, 3, 4]); // skip tempo-only conductor
     assert.deepEqual(parsed.tracks.slice(1).map(t => t.notes[0].pitch), [69, 64, 60, 57]);
     assert.deepEqual(parsed.tracks.slice(1).map(t => t.notes[0].startSeconds), [0, 0.125, 0.25, 0.375]);
     assert.equal(parsed.seconds(480), 0.5);
@@ -92,6 +66,32 @@ test('four-part rendering follows separate notes, mute and solo; WAV is non-sile
     assert.equal(wav.getUint16(22, true), 2);
     assert.equal(wav.getUint32(40, true), mix.left.length * 4);
 });
+test('chunked async renderer is deterministic and yields progress', async () => {
+    const score = Studio.parseMidi(midi()), recordings = [{ samples: source() }];
+    const parts = ['Soprano', 'Alto', 'Tenor', 'Bass'].map((name, i) => ({ name, recording: 0,
+        track: i + 1, sourceHz: 220, ...Studio.defaults[name] }));
+    const synchronous = Studio.render(score, parts, recordings, rate, 3);
+    const progress = [];
+    const asynchronous = await Studio.renderAsync(score, parts, recordings, rate, 3, state => progress.push(state));
+    assert.deepEqual(asynchronous.left, synchronous.left);
+    assert.deepEqual(asynchronous.right, synchronous.right);
+    assert.equal(progress.at(-1).completed, 8);
+    assert.equal(progress.at(-1).total, 8);
+    assert.ok(asynchronous.peak > 0.01);
+});
+test('pitch detection never reads beyond the selected vowel crop', () => {
+    const recording = new Float32Array(rate * 0.3);
+    recording.set(source(220, 0.04));
+    for (let i = Math.floor(rate * 0.04); i < recording.length; ++i) recording[i] = 0.3 * Math.sin(2 * Math.PI * 310 * i / rate);
+    const crop = Studio.estimatePitch(recording, rate, 0, 0, 0.04);
+    assert.ok(Math.abs(crop - 220) < 5, `crop F0: ${crop}`);
+    const unbounded = Studio.estimatePitch(recording, rate);
+    assert.ok(Math.abs(unbounded - crop) > 30, `the test needs two different regions (${crop}, ${unbounded})`);
+    const score = Studio.parseMidi(midi());
+    const parts = ['Soprano', 'Alto', 'Tenor', 'Bass'].map((name, i) => ({ name, recording: 0,
+        track: i + 1, cropStart: 0, cropEnd: 0.04, sourceHz: 0 }));
+    assert.ok(Studio.render(score, parts, [{ samples: recording }], rate, 2).peak > 0.01);
+});
 test('invalid inputs and unnatural register shifts fail visibly or warn', () => {
     assert.throws(() => Studio.parseMidi(Uint8Array.from([1, 2, 3])), /Truncated|header/);
     assert.throws(() => Studio.estimatePitch(new Float32Array(rate), rate), /silent/);
@@ -101,6 +101,8 @@ test('invalid inputs and unnatural register shifts fail visibly or warn', () => 
         track: i + 1, sourceHz: 130, correction: 1, volume: 0.5 }));
     const mix = Studio.render(score, parts, [{ samples: source(130) }], rate, 2);
     assert.ok(mix.warnings.some(text => text.includes('another recording in this register')));
+    assert.throws(() => Studio.render(score, parts, [{ samples: source(130) }], rate, 0.5),
+        /no audio was silently truncated/);
 });
 test('checked-in before/after examples match this deterministic renderer', () => {
     const base = path.join(__dirname, '../examples');
@@ -111,4 +113,3 @@ test('checked-in before/after examples match this deterministic renderer', () =>
     const after = Buffer.from(Studio.wav([shaped], rate));
     assert.deepEqual(fs.readFileSync(path.join(base, 'after-synthetic-vowel-A4.wav')), after);
 });
-module.exports = { source, midi };

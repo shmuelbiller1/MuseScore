@@ -1,0 +1,60 @@
+{
+  "methodology": "automated F0 measurement on a short isolated steady note; not perceived realism",
+  "source": "VocalSet 1.2 / mblackman vowel voice banks, CC BY 4.0 (see vocalset/ATTRIBUTION.md)",
+  "sampleRate": 24000,
+  "durationSeconds": 0.9875,
+  "warnings": [
+    "Alto note 64: extreme source-to-score pitch shift; use another recording in this register.",
+    "Alto note 66: extreme source-to-score pitch shift; use another recording in this register."
+  ],
+  "measurements": [
+    {
+      "part": "Soprano",
+      "singer": "soprano-f1-a.wav",
+      "sourceHz": 701.7,
+      "midiPitch": 69,
+      "targetHz": 440,
+      "measuredHz": 440.22,
+      "errorCents": 0.9,
+      "noteStartSeconds": 0,
+      "noteEndSeconds": 0.25,
+      "peak": 0.379
+    },
+    {
+      "part": "Alto",
+      "singer": "alto-f5-a.wav",
+      "sourceHz": 709.55,
+      "midiPitch": 64,
+      "targetHz": 329.63,
+      "measuredHz": 329.47,
+      "errorCents": -0.8,
+      "noteStartSeconds": 0.125,
+      "noteEndSeconds": 0.375,
+      "peak": 0.322
+    },
+    {
+      "part": "Tenor",
+      "singer": "tenor-m2-a.wav",
+      "sourceHz": 332.03,
+      "midiPitch": 60,
+      "targetHz": 261.63,
+      "measuredHz": 261.5,
+      "errorCents": -0.8,
+      "noteStartSeconds": 0.25,
+      "noteEndSeconds": 0.5,
+      "peak": 0.344
+    },
+    {
+      "part": "Bass",
+      "singer": "bass-m8-a.wav",
+      "sourceHz": 260.28,
+      "midiPitch": 57,
+      "targetHz": 220,
+      "measuredHz": 219.91,
+      "errorCents": -0.7,
+      "noteStartSeconds": 0.375,
+      "noteEndSeconds": 0.5625,
+      "peak": 0.47
+    }
+  ]
+}

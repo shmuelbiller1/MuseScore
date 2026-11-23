@@ -391,9 +391,13 @@ void AppshellCommandsController::openExperimentalChoirPage()
 {
     // Open only the installed local resource. Never fall back to a web URL.
     const QString page = QDir(globalConfiguration()->appDataPath().toQString()).filePath("choir-studio/index.html");
-    if (QFileInfo::exists(page)) {
-        platformInteractive()->openUrl(QUrl::fromLocalFile(page));
+    if (!QFileInfo::exists(page)) {
+        LOGW() << "Choir studio not installed: " << page;
+        interactive()->error(muse::trc("appshell", "Choir studio is not installed"),
+                             muse::trc("appshell", "The offline choir studio files are missing. Reinstall MuseScore Studio."));
+        return;
     }
+    platformInteractive()->openUrl(QUrl::fromLocalFile(page));
 }
 
 void AppshellCommandsController::openAskForHelpPage()

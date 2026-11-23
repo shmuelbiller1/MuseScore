@@ -6,14 +6,14 @@
     'use strict';
     const $ = id => document.getElementById(id), names = ['Soprano', 'Alto', 'Tenor', 'Bass'];
     const rate = 24000, recordings = [], assignments = [], Studio = window.ChoirStudio;
-    let score, context, mediaRecorder, micStream, processedUrl;
+    let score, context, mediaRecorder, micStream, processedUrl, recordPending = false, renderPending = false;
     async function audio() { if (!context) context = new AudioContext({ sampleRate: rate }); await context.resume(); return context; }
     const status = text => { $('status').textContent = text; };
     const warning = text => { $('warning').textContent = text; };
     async function addRecording(blob, name) {
         const ctx = await audio();
         const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-        if (buffer.duration < 0.1 || buffer.duration > 90) throw Error('Recording must be between 0.1 and 90 seconds');
+        if (buffer.duration < 0.06 || buffer.duration > 90) throw Error('Recording must be between 60 ms and 90 seconds');
         const samples = new Float32Array(buffer.length);
         for (let c = 0; c < buffer.numberOfChannels; ++c) {
             const channel = buffer.getChannelData(c);
@@ -37,34 +37,67 @@
         }
     };
     $('record').onclick = async () => {
+        if (recordPending || mediaRecorder) return;
+        recordPending = true;
+        $('record').disabled = true;
+        let stream;
         try {
             if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw Error('Microphone unavailable. Open this local file in a secure browser context or import WAV.');
-            micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false }, video: false });
-            const chunks = []; mediaRecorder = new MediaRecorder(micStream);
-            mediaRecorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
-            mediaRecorder.onstop = async () => {
-                micStream.getTracks().forEach(track => track.stop());
+            status('Requesting microphone permission…');
+            stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false }, video: false });
+            const chunks = [], recorder = new MediaRecorder(stream);
+            micStream = stream;
+            mediaRecorder = recorder;
+            recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+            recorder.onerror = event => {
+                warning(event.error?.message || 'Microphone capture failed');
+                if (recorder.state === 'recording') recorder.stop();
+            };
+            recorder.onstop = async () => {
+                stream.getTracks().forEach(track => track.stop());
+                if (micStream === stream) micStream = undefined;
+                if (mediaRecorder === recorder) mediaRecorder = undefined;
                 $('record').disabled = false; $('stop').disabled = true;
-                try { await addRecording(new Blob(chunks, { type: mediaRecorder.mimeType }), `Microphone ${new Date().toLocaleTimeString()}`); }
+                try { if (chunks.length) await addRecording(new Blob(chunks, { type: recorder.mimeType }), `Microphone ${new Date().toLocaleTimeString()}`); }
                 catch (err) { warning(err.message); }
             };
-            mediaRecorder.start(); $('record').disabled = true; $('stop').disabled = false; status('Recording locally. Sing a steady vowel; stop to keep the original.');
-        } catch (err) { warning(err.message); micStream?.getTracks().forEach(track => track.stop()); }
+            recorder.start(); $('stop').disabled = false; status('Recording locally. Sing a steady vowel; stop to keep the original.');
+        } catch (err) {
+            warning(err.message); stream?.getTracks().forEach(track => track.stop());
+            if (micStream === stream) micStream = undefined;
+            mediaRecorder = undefined; $('record').disabled = false; $('stop').disabled = true;
+        } finally { recordPending = false; }
     };
-    $('stop').onclick = () => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); };
+    $('stop').onclick = () => { if (mediaRecorder?.state === 'recording') { $('stop').disabled = true; mediaRecorder.stop(); } };
+    window.addEventListener('pagehide', () => {
+        if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
+        micStream?.getTracks().forEach(track => track.stop());
+    });
     $('playOriginal').onclick = async () => {
         const source = recordings[Number($('originalChoice').value)]; if (!source) return warning('Import or record first');
         $('player').pause(); $('player').src = source.url; await $('player').play(); status('Playing unchanged original');
     };
     $('saveOriginal').onclick = () => {
         const source = recordings[Number($('originalChoice').value)]; if (!source) return warning('Import or record first');
-        const link = document.createElement('a'); link.href = source.url; link.download = source.name.replace(/[^a-z0-9._-]/gi, '_') +
-            (source.blob.type.includes('wav') ? '.wav' : '.webm'); link.click();
+        const link = document.createElement('a'); link.href = source.url;
+        const name = source.name.replace(/[^a-z0-9._-]/gi, '_');
+        link.download = /\.(wav|webm|ogg)$/i.test(name) ? name : name + (source.blob.type.includes('ogg') ? '.ogg' : '.webm');
+        link.click();
+    };
+    $('saveWav').onclick = () => {
+        const source = recordings[Number($('originalChoice').value)]; if (!source) return warning('Import or record first');
+        const url = URL.createObjectURL(new Blob([Studio.wav([source.samples], rate)], { type: 'audio/wav' }));
+        const link = document.createElement('a'); link.href = url;
+        link.download = source.name.replace(/[^a-z0-9._-]/gi, '_').replace(/\.[^.]*$/, '') + '-reimport.wav';
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
     };
     $('midi').onchange = async event => {
         try {
             score = Studio.parseMidi(await event.target.files[0].arrayBuffer());
-            const available = score.tracks.filter(t => t.notes.length);
+            const available = Studio.noteTrackIndices(score);
+            // A tempo-only conductor track must not duplicate Soprano/Alto.
+            assignments.forEach((part, i) => { part.track = available[i] ?? -1; });
             $('scoreInfo').textContent = `${score.tracks.length} MIDI tracks; ${available.length} contain notes. Map four distinct tracks below. Tempo changes and rests follow this exported file.`;
             if (available.length < 4) warning('This MIDI contains fewer than four note tracks; export the four-part score first.');
             else warning('');
@@ -87,7 +120,7 @@
             const labeled = (title, element) => { const label = document.createElement('label'); label.textContent = title; label.append(element); card.append(label); return element; };
             const track = document.createElement('select'); track.dataset.field = 'track';
             (score?.tracks || []).forEach((t, i) => { if (t.notes.length) { const option = document.createElement('option'); option.value = i; option.textContent = `${i + 1}: ${t.name} (${t.notes.length} notes)`; track.append(option); } });
-            if (score && !score.tracks[part.track]?.notes.length) part.track = Number(track.options[index]?.value ?? track.options[0]?.value ?? 0);
+            if (score && !score.tracks[part.track]?.notes.length) part.track = Number(track.options[index]?.value ?? -1);
             track.value = part.track; labeled('Written score track', track);
             const source = document.createElement('select'); source.dataset.field = 'recording'; recordings.forEach((r, i) => {
                 const opt = document.createElement('option'); opt.value = i; opt.textContent = r.name; source.append(opt);
@@ -116,11 +149,15 @@
     }
     refresh();
     $('render').onclick = async () => {
+        if (renderPending) return;
+        renderPending = true; $('render').disabled = true;
         try {
             if (!score || recordings.length === 0) throw Error('Load both MIDI and a WAV or microphone recording first');
-            if (new Set(assignments.map(p => p.track)).size !== 4) throw Error('Choose four different written-note tracks');
+            if (assignments.some(p => !score.tracks[p.track]?.notes.length)
+                || new Set(assignments.map(p => p.track)).size !== 4) throw Error('Choose four different written-note tracks');
             status('Rendering locally…'); warning(''); await new Promise(resolve => setTimeout(resolve, 20));
-            const mix = Studio.render(score, assignments, recordings, rate, 30);
+            const mix = await Studio.renderAsync(score, assignments, recordings, rate, 240,
+                step => status(`Rendering locally… ${step.completed}/${step.total} notes`));
             if (mix.peak < 0.001) throw Error('Rendered silence; choose an audible voiced source and non-muted tracks');
             if (processedUrl) URL.revokeObjectURL(processedUrl);
             processedUrl = URL.createObjectURL(new Blob([Studio.wav([mix.left, mix.right], rate)], { type: 'audio/wav' }));
@@ -128,6 +165,7 @@
             status(`Rendered ${(mix.left.length / rate).toFixed(2)} seconds; peak ${mix.peak.toFixed(3)}. Original source unchanged.`);
             warning(mix.warnings.slice(0, 8).join('\n') || 'Experimental vowel rendering: audition for artifacts; no convincing choir-timbre claim.');
         } catch (err) { status('Render failed'); warning(err.message); }
+        finally { renderPending = false; $('render').disabled = false; }
     };
     $('listen').onclick = async () => { $('player').pause(); $('player').src = processedUrl; await $('player').play(); status('Playing processed mix'); };
     $('download').onclick = () => { const a = document.createElement('a'); a.href = processedUrl; a.download = 'personal-voice-choir-experimental.wav'; a.click(); };

@@ -36,7 +36,10 @@ foreach ($required in @($launcher, $exe, $font, $license, $qt,
     (Join-Path $choir 'index.html'), (Join-Path $choir 'choir.js'),
     (Join-Path $choir 'studio.js'), (Join-Path $choir 'README.md'),
     (Join-Path $choir 'examples\four-independent-parts.mid'),
-    (Join-Path $choir 'examples\four-part-synthetic-mix.wav'))) {
+    (Join-Path $choir 'examples\four-part-synthetic-mix.wav'),
+    (Join-Path $choir 'examples\four-part-real-vowel-mix.wav'),
+    (Join-Path $choir 'examples\vocalset\ATTRIBUTION.md'),
+    (Join-Path $choir 'examples\vocalset\soprano-f1-a.wav'))) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Missing offline dependency: $required" }
 }
 if ((Get-Item $font).Length -lt 1000000) { throw 'Bundled MS Basic soundfont is too small.' }

@@ -1,0 +1,14 @@
+# Licensed human-singer demonstration recordings
+
+Four `a` vowel clips in this directory derive from **VocalSet 1.2**, Wilkins, J., Seetharaman, P., Wahl, A., and Pardo, B. (2018), *VocalSet: A Singing Voice Dataset*, Proceedings of ISMIR 2018, https://zenodo.org/records/1442513 (DOI: 10.5281/zenodo.1442513). The original VocalSet metadata at https://zenodo.org/api/records/1442513 declares the licence **Creative Commons Attribution 4.0 International** (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/. The included clips are **modified**, not original full-length recordings. CC BY 4.0 is an audio-content license; it does not license the MuseScore source code, and MuseScore's GPLv3 source code does not license VocalSet.
+
+These four 80 ms, 44.1 kHz mono, 16-bit clips were originally processed by Matt Blackman in [Vowel Voice Banks — VocalSet](https://github.com/mblackman/vocalset-vowel-voicebanks): selected from steady-state `long straight` vocal tones, trimmed, 3 ms faded and peak normalized. That repository's [LICENSE](https://github.com/mblackman/vocalset-vowel-voicebanks/blob/main/LICENSE) specifically identifies the voice content as CC BY 4.0 and its [attribution](https://github.com/mblackman/vocalset-vowel-voicebanks/blob/main/source/ATTRIBUTION.md) traces it to VocalSet. Reproduced unmodified from those processed clips here; `after-vocalset-soprano-A4.wav` and `four-part-real-vowel-mix.wav` are *further processed* using the GPLv3 offline renderer at 24 kHz. Attribution to both VocalSet and Matt Blackman is required for these demonstrations. No licence or permission is inferred for any *other* recording, singer or model.
+
+| Local file | VocalSet singer (voice category in dataset) | SHA-256 of included processed input |
+| --- | --- | --- |
+| `soprano-f1-a.wav` | f1 (soprano) | `bae7ab0db7fbded865bda483ea618417b83b4138fcb382bd6499e5bb0fe2e3b3` |
+| `alto-f5-a.wav` | f5 (mezzo-soprano) | `1437fdd9b67efddcb1d61a5613ebef49c35e328acb07729eccb9dd7a8f07bd79` |
+| `tenor-m2-a.wav` | m2 (tenor) | `046adf9e94e0a9e2e2e32878d6a37867f6a89bfef09cf666490bbc11e6c4c296` |
+| `bass-m8-a.wav` | m8 (bass) | `37db645d4b2488e9b60e73436c1d6b8f279e75fd4a943b549c9cded78ff7f572` |
+
+The role labels name the source singer group, **not** the audible character of the processed output. In particular, a professionally sung soprano vowel is not proof of a light youthful, non-operatic timbre, and the alto demo requires an extreme downward shift and emits a warning. These are tiny steady vowels, not full phrases, lyrics, articulations or an evaluated realistic choir. For independent manual comparison, play an original `.wav` then `after-vocalset-soprano-A4.wav`, and play the four-part mix with its corresponding MIDI fixture. The measured F0 errors in `../real-vowel-metrics.json` only characterize pitch on four short steady segments; they are **not** perceptual realism scores.

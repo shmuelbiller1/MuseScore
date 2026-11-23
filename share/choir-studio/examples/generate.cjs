@@ -5,7 +5,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const Studio = require('../choir.js');
-const { source, midi } = require('../tests/choir.test.cjs');
+const { source, midi } = require('./fixtures.cjs');
 const root = __dirname, rate = 24000, original = source();
 fs.writeFileSync(path.join(root, 'before-synthetic-vowel.wav'), Buffer.from(Studio.wav([original], rate)));
 const bright = Studio.shape(Studio.vowelNote(original, rate, 220, Studio.hz(69), rate * 0.45), rate,

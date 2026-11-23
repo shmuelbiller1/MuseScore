@@ -90,10 +90,12 @@
         return { format, division, tracks, tempo: timeline, seconds };
     }
 
-    function estimatePitch(samples, rate, startSeconds = 0, override = 0) {
+    function estimatePitch(samples, rate, startSeconds = 0, override = 0, endSeconds = 0) {
         if (override > 0) return override;
-        const start = Math.floor(startSeconds * rate), length = Math.min(Math.floor(rate * 0.09), samples.length - start);
-        if (length < rate * 0.03) throw Error('Choose a longer voiced vowel region (at least 30 ms)');
+        const start = Math.floor(startSeconds * rate);
+        const end = endSeconds > 0 ? Math.min(samples.length, Math.floor(endSeconds * rate)) : samples.length;
+        const length = Math.min(Math.floor(rate * 0.09), end - start);
+        if (start < 0 || length < rate * 0.03) throw Error('Choose a voiced vowel region of at least 30 ms');
         const min = Math.floor(rate / 900), max = Math.min(Math.floor(rate / 65), Math.floor(length / 2));
         let best = 0, bestScore = -Infinity, peakEnergy = 0;
         const correlation = new Float32Array(max + 2);
@@ -117,7 +119,14 @@
                 best = lag; break;
             }
         }
-        return rate / best;
+        // Sub-sample parabolic interpolation reduces low-rate pitch-bin error.
+        let offset = 0;
+        if (best > min && best < max) {
+            const left = correlation[best - 1], center = correlation[best], right = correlation[best + 1];
+            const curvature = left - 2 * center + right;
+            if (curvature < -1e-6) offset = clamp(0.5 * (left - right) / curvature, -0.5, 0.5);
+        }
+        return rate / (best + offset);
     }
 
     // Period-synchronous overlap-add. Output grain spacing sets the note's F0;
@@ -175,17 +184,36 @@
         return output;
     }
 
-    function render(score, parts, recordings, rate, maxSeconds = 30) {
+    function noteTrackIndices(score) {
+        return score.tracks.flatMap((track, index) => track.notes.length ? [index] : []);
+    }
+
+    function* renderSteps(score, parts, recordings, rate, maxSeconds = 240) {
         if (!score || !Array.isArray(parts) || parts.length !== 4) throw Error('Map four independent MIDI tracks');
+        if (!Number.isFinite(rate) || rate < 8000 || rate > 96000) throw Error('Unsupported output sample rate');
+        if (!Number.isFinite(maxSeconds) || maxSeconds <= 0) throw Error('Invalid render length limit');
         const selected = parts.filter(p => p && !p.mute && (!parts.some(x => x && x.solo) || p.solo));
         if (selected.some(p => !recordings[p.recording])) throw Error('Each active part needs a recording');
-        const frames = Math.ceil(Math.min(maxSeconds, Math.max(0.1, ...selected.flatMap(p => score.tracks[p.track].notes.map(n => n.endSeconds + 0.05)))) * rate);
+        let duration = 0.1;
+        for (const part of selected) {
+            const notes = score.tracks[part.track]?.notes;
+            if (!notes) throw Error('Missing MIDI track for ' + part.name);
+            for (const note of notes) {
+                if (!Number.isFinite(note.startSeconds) || !Number.isFinite(note.endSeconds)
+                    || note.endSeconds < note.startSeconds) throw Error('Invalid note timing');
+                duration = Math.max(duration, note.endSeconds + 0.05);
+            }
+        }
+        if (duration > maxSeconds) throw Error(`Score exceeds ${maxSeconds} seconds; no audio was silently truncated. Export a shorter score section.`);
+        const frames = Math.ceil(duration * rate);
         const left = new Float32Array(frames), right = new Float32Array(frames), warnings = [];
+        const totalNotes = selected.reduce((sum, part) => sum + score.tracks[part.track].notes.length, 0);
+        let completedNotes = 0;
         for (let partIndex = 0; partIndex < parts.length; ++partIndex) {
             const part = parts[partIndex]; if (!selected.includes(part)) continue;
             const source = recordings[part.recording], notes = score.tracks[part.track]?.notes;
             if (!notes) throw Error('Missing MIDI track for ' + part.name);
-            const sourceHz = estimatePitch(source.samples, rate, part.cropStart || 0, part.sourceHz || 0);
+            const sourceHz = estimatePitch(source.samples, rate, part.cropStart || 0, part.sourceHz || 0, part.cropEnd || 0);
             const pan = clamp(part.pan ?? 0, -1, 1), volume = clamp(part.volume ?? 0.7, 0, 1);
             const gainL = Math.cos((pan + 1) * Math.PI / 4) * volume, gainR = Math.sin((pan + 1) * Math.PI / 4) * volume;
             for (const note of notes) {
@@ -202,12 +230,36 @@
                     const sample = voiced[i] * envelope * note.velocity / 100;
                     left[start + i] += sample * gainL; right[start + i] += sample * gainR;
                 }
+                yield { completed: ++completedNotes, total: totalNotes };
             }
         }
         let peak = 0; for (let i = 0; i < frames; ++i) peak = Math.max(peak, Math.abs(left[i]), Math.abs(right[i]));
         const scale = peak > 0.97 ? 0.97 / peak : 1;
         if (scale !== 1) for (let i = 0; i < frames; ++i) { left[i] *= scale; right[i] *= scale; }
         return { left, right, rate, warnings: [...new Set(warnings)], peak: peak * scale };
+    }
+
+    function render(score, parts, recordings, rate, maxSeconds = 240) {
+        const steps = renderSteps(score, parts, recordings, rate, maxSeconds);
+        let step = steps.next();
+        while (!step.done) step = steps.next();
+        return step.value;
+    }
+
+    async function renderAsync(score, parts, recordings, rate, maxSeconds = 240, onProgress = () => {}) {
+        const steps = renderSteps(score, parts, recordings, rate, maxSeconds);
+        let step = steps.next(), sinceYield = Date.now(), latest;
+        while (!step.done) {
+            latest = step.value;
+            if (Date.now() - sinceYield > 40) {
+                onProgress(latest);
+                await new Promise(resolve => setTimeout(resolve, 0));
+                sinceYield = Date.now();
+            }
+            step = steps.next();
+        }
+        if (latest) onProgress(latest);
+        return step.value;
     }
 
     function wav(channels, rate) {
@@ -221,5 +273,5 @@
         for (let i = 0; i < frames; ++i) for (const ch of channels) { view.setInt16(at, Math.round(clamp(ch[i] || 0, -1, 1) * 32767), true); at += 2; }
         return output;
     }
-    return { parseMidi, estimatePitch, vowelNote, shape, render, wav, defaults, hz };
+    return { parseMidi, noteTrackIndices, estimatePitch, vowelNote, shape, render, renderAsync, wav, defaults, hz };
 });

@@ -10,11 +10,11 @@
 <label>Import WAV (mono or stereo)<input id="wav" type="file" accept=".wav,audio/wav" multiple></label>
 <button id="record">Record microphone</button><button id="stop" disabled>Stop recording</button>
 <p id="sources">No recordings loaded. Choose a sustained vowel, with minimal background noise, for each register if possible. Files remain in this browser session; originals are never overwritten or uploaded.</p>
-<label>Preview original <select id="originalChoice"></select></label><button id="playOriginal">Play original</button> <button id="saveOriginal">Save original recording</button>
+<label>Preview original <select id="originalChoice"></select></label><button id="playOriginal">Play original</button> <button id="saveOriginal">Save original capture</button> <button id="saveWav">Save reimportable WAV</button>
 </section>
 <section><h2>2 · Score timing</h2><label>MuseScore MIDI export (.mid) <input id="midi" type="file" accept=".mid,.midi,audio/midi"></label><p id="scoreInfo">Export MIDI from the open score, then select it here. This does not read or transcribe a manuscript.</p></section>
 <section><h2>3 · Four independent parts</h2><p>Assign a different score track to each part. Each may use the same recording, but <strong>the written notes are never copied between parts</strong>. Pitch correction at 100% keeps the written note; lower values intentionally relax that guarantee.</p><div class="parts" id="parts"></div></section>
-<section><h2>4 · Listen and export</h2><button id="render">Render four parts (first 30 seconds)</button> <button id="listen" disabled>Play processed</button> <button id="download" disabled>Download processed WAV</button>
+<section><h2>4 · Listen and export</h2><button id="render">Render full score (up to 4 minutes)</button> <button id="listen" disabled>Play processed</button> <button id="download" disabled>Download processed WAV</button>
 <p id="status" role="status"></p><p id="warning" role="alert"></p>
 <audio id="player" controls></audio><p>To compare instantly, use <em>Play original</em> or <em>Play processed</em> above. Solo/mute and rerender to inspect one part. The original source and processed mix remain separate.</p></section>
 <script src="choir.js"></script><script src="studio.js"></script>
