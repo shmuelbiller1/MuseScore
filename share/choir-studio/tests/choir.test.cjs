@@ -92,6 +92,16 @@ test('four-part rendering follows separate notes, mute and solo; WAV is non-sile
     assert.equal(wav.getUint16(22, true), 2);
     assert.equal(wav.getUint32(40, true), mix.left.length * 4);
 });
+test('invalid inputs and unnatural register shifts fail visibly or warn', () => {
+    assert.throws(() => Studio.parseMidi(Uint8Array.from([1, 2, 3])), /Truncated|header/);
+    assert.throws(() => Studio.estimatePitch(new Float32Array(rate), rate), /silent/);
+    assert.throws(() => Studio.vowelNote(source(), rate, 220, 1800, 1000), /outside supported/);
+    const score = Studio.parseMidi(midi());
+    const parts = ['Soprano', 'Alto', 'Tenor', 'Bass'].map((name, i) => ({ name, recording: 0,
+        track: i + 1, sourceHz: 130, correction: 1, volume: 0.5 }));
+    const mix = Studio.render(score, parts, [{ samples: source(130) }], rate, 2);
+    assert.ok(mix.warnings.some(text => text.includes('another recording in this register')));
+});
 test('checked-in before/after examples match this deterministic renderer', () => {
     const base = path.join(__dirname, '../examples');
     const raw = Buffer.from(Studio.wav([source()], rate));
