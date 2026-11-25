@@ -236,7 +236,12 @@ FocusScope {
                     onClicked: voiceStudioError.text = notationView.auditionVoiceSlice(true, arrangementShift.value)
                 }
                 Button {
-                    text: qsTrc("notationscene", "Save note preview WAV…")
+                    text: qsTrc("notationscene", "Save raw slice WAV…")
+                    enabled: root.selectedVoiceClip.tagged === true
+                    onClicked: { voicePreviewDialog.processed = false; voicePreviewDialog.open() }
+                }
+                Button {
+                    text: qsTrc("notationscene", "Save processed note WAV…")
                     enabled: root.selectedVoiceClip.tagged === true
                     onClicked: { voicePreviewDialog.processed = true; voicePreviewDialog.open() }
                 }
