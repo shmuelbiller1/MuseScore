@@ -181,6 +181,7 @@ QString NotationPaintView::tagVoiceNote(int sourceStartMs, int sourceEndMs)
     if (!project->setVoiceStudioData(QJsonDocument(root).toJson(QJsonDocument::Compact), project->voiceStudioSource())) {
         return QStringLiteral("Could not save this note tag in the score copy.");
     }
+    scheduleRedraw();
     return {};
 }
 
@@ -295,7 +296,8 @@ void NotationPaintView::paintVoiceWaveform(QPainter* painter)
     // notation. Repeats still need separate take/playback mapping.
     const auto& timeline = notation()->elements()->msScore()->tempoTimeline(false);
     const double sourceDuration = double(m_voiceFrames) / m_voiceSampleRate;
-    const QJsonArray clips = QJsonDocument::fromJson(studioProjectSession()->project()->voiceStudioSession()).object().value("clips").toArray();
+    const QJsonArray clips
+        = QJsonDocument::fromJson(studioProjectSession()->project()->voiceStudioSession()).object().value("clips").toArray();
     painter->save();
     painter->setPen(QPen(QColor(34, 130, 186, 180), 1));
     for (const auto* page : pages) {
