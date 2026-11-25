@@ -103,8 +103,27 @@ FocusScope {
             }
             Label {
                 text: notationView.voiceStudioHasAudio
-                      ? qsTrc("notationscene", "Tempo-aware waveform overview (not note-aligned)")
+                      ? qsTrc("notationscene", "Waveform follows written notes (repeat mapping pending)")
                       : qsTrc("notationscene", "No recording imported")
+            }
+            Label { text: qsTrc("notationscene", "Slice ms:") }
+            SpinBox {
+                id: sourceStart
+                editable: true
+                from: 0
+                to: notationView.voiceStudioAudioLengthMs
+            }
+            SpinBox {
+                id: sourceEnd
+                editable: true
+                from: 0
+                to: notationView.voiceStudioAudioLengthMs
+                value: Math.min(1000, to)
+            }
+            Button {
+                text: qsTrc("notationscene", "Tag selected note")
+                enabled: notationView.voiceStudioHasAudio
+                onClicked: voiceStudioError.text = notationView.tagVoiceNote(sourceStart.value, sourceEnd.value)
             }
             Label {
                 id: voiceStudioError

@@ -36,12 +36,15 @@ class NotationPaintView : public AbstractNotationPaintView
     QML_ELEMENT
     Q_PROPERTY(bool voiceStudioCopy READ voiceStudioCopy NOTIFY voiceStudioChanged)
     Q_PROPERTY(bool voiceStudioHasAudio READ voiceStudioHasAudio NOTIFY voiceStudioChanged)
+    Q_PROPERTY(int voiceStudioAudioLengthMs READ voiceStudioAudioLengthMs NOTIFY voiceStudioChanged)
 
 public:
     explicit NotationPaintView(QQuickItem* parent = nullptr);
     bool voiceStudioCopy() const;
     bool voiceStudioHasAudio() const;
+    int voiceStudioAudioLengthMs() const;
     Q_INVOKABLE QString importVoiceStudioWav(const QUrl& url);
+    Q_INVOKABLE QString tagVoiceNote(int sourceStartMs, int sourceEndMs);
 
 signals:
     void voiceStudioChanged();
