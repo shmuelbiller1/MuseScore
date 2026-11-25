@@ -129,6 +129,7 @@ private:
 
     void openOnlineHandbookPage();
     void openExperimentalChoirPage();
+    void createEditableScoreCopy();
     void openAskForHelpPage();
     void openAccessibilityStatementPage();
     void openPreferencesDialog();

@@ -202,6 +202,7 @@ MenuItem* AppMenuModel::makeFileMenu()
         makeMenuItem(PROJECT_SAVE_TO_CLOUD_COMMAND),
         makeMenu(TranslatableString("appshell/menu/file", "Save o&ther"), {
             makeMenuItem(PROJECT_SAVE_A_COPY_COMMAND),
+            makeMenuItem(APP_CREATE_EDITABLE_SCORE_COPY_COMMAND),
             makeMenuItem(PROJECT_SAVE_SELECTION_COMMAND),
         }),
         makeMenu(TranslatableString("appshell/menu/file", "Pu&blish online"), {

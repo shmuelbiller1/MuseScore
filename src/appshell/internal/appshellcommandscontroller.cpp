@@ -29,7 +29,9 @@
 #include <QFileOpenEvent>
 #include <QFileInfo>
 #include <QDir>
+#include <QUrl>
 #include <QWindow>
+#include <vector>
 #include <QMimeData>
 
 #include "global/async/async.h"
@@ -38,6 +40,8 @@
 #include "global/containers.h"
 
 #include "audio/common/soundfonttypes.h"
+#include "project/inotationproject.h"
+#include "project/types/projecttypes.h"
 
 #include "../appshellcommands.h"
 #include "project/projectcommands.h"
@@ -83,6 +87,7 @@ void AppshellCommandsController::init()
     cd->onRequest(this, APP_ABOUT_MUSICXML_COMMAND, [this]() { openAboutMusicXMLDialog(); return muse::make_ok(); });
     cd->onRequest(this, APP_ONLINE_HANDBOOK_COMMAND, [this]() { openOnlineHandbookPage(); return muse::make_ok(); });
     cd->onRequest(this, APP_EXPERIMENTAL_CHOIR_COMMAND, [this]() { openExperimentalChoirPage(); return muse::make_ok(); });
+    cd->onRequest(this, APP_CREATE_EDITABLE_SCORE_COPY_COMMAND, [this]() { createEditableScoreCopy(); return muse::make_ok(); });
     cd->onRequest(this, APP_ASK_HELP_COMMAND, [this]() { openAskForHelpPage(); return muse::make_ok(); });
 
     cd->onRequest(this, APP_ACCESSIBILITY_STATEMENT_COMMAND, [this]() { openAccessibilityStatementPage(); return muse::make_ok(); });
@@ -398,6 +403,57 @@ void AppshellCommandsController::openExperimentalChoirPage()
         return;
     }
     platformInteractive()->openUrl(QUrl::fromLocalFile(page));
+}
+
+void AppshellCommandsController::createEditableScoreCopy()
+{
+    // Do not switch a second notation view onto the same mutable score. First
+    // create a separate local project, then let the normal project opener load it.
+    const auto original = projectSession()->project();
+    if (!original || original->path().empty() || original->isCloudProject()) {
+        interactive()->error(muse::trc("appshell", "Save the original locally first"),
+                             muse::trc("appshell", "Open a saved local score before creating an editable copy."));
+        return;
+    }
+    if (original->isNeedSave()) {
+        interactive()->error(muse::trc("appshell", "Save the original first"),
+                             muse::trc("appshell", "Save your current score before creating a separate editable copy."));
+        return;
+    }
+    if (!original->canSave()) {
+        interactive()->error(muse::trc("appshell", "Cannot copy this score"),
+                             muse::trc("appshell", "The current score cannot be saved safely. Fix it before creating a copy."));
+        return;
+    }
+
+    const QFileInfo sourceInfo(original->path().toQString());
+    const QString suggested = sourceInfo.dir().filePath(sourceInfo.completeBaseName() + " - Voice Studio.mscz");
+    const std::vector<std::string> filter { muse::trc("appshell", "MuseScore score") + " (*.mscz)" };
+    interactive()->selectSavingFile(muse::trc("appshell", "Create editable score copy"),
+                                    muse::io::path_t(QUrl::fromLocalFile(suggested)), filter)
+    .onResolve(this, [this, original](const muse::io::path_t& destination) {
+        if (destination.empty()) {
+            return;
+        }
+        const QFileInfo targetInfo(destination.toQString());
+        if (projectSession()->project() != original || original->isNeedSave() || !original->canSave() || original->path().empty()
+            || targetInfo.suffix().compare("mscz", Qt::CaseInsensitive) != 0 || targetInfo.exists()
+            || targetInfo.absoluteFilePath() == QFileInfo(original->path().toQString()).absoluteFilePath()) {
+            interactive()->error(muse::trc("appshell", "Choose a new score-copy path"),
+                                 muse::trc("appshell", "The original changed, or this path is not a new .mscz file. Choose an unused location."));
+            return;
+        }
+        const muse::Ret saved = original->save(destination, project::SaveMode::SaveCopy, false);
+        if (!saved) {
+            interactive()->error(muse::trc("appshell", "Could not create the score copy"), saved.toString());
+            return;
+        }
+        openProjectScenario()->openProject(destination).onResolve(this, [this](const muse::Ret& opened) {
+            if (!opened) {
+                interactive()->error(muse::trc("appshell", "Score copy saved but not opened"), opened.toString());
+            }
+        });
+    });
 }
 
 void AppshellCommandsController::openAskForHelpPage()
