@@ -29,6 +29,7 @@
 #include <QFileOpenEvent>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QDir>
 #include <QUrl>
 #include <QWindow>
@@ -471,10 +472,19 @@ void AppshellCommandsController::createEditableScoreCopy()
                 return;
             }
             const auto copy = projectSession()->project();
-            if (!copy || copy->path() != destination
-                || !copy->setVoiceStudioData("{\"version\":1,\"clips\":[]}", {})) {
+            if (!copy || copy->path() != destination) {
                 interactive()->error(muse::trc("appshell", "Score copy opened without Voice Studio"),
                                      muse::trc("appshell", "Open the copy in this window and try again."));
+                return;
+            }
+            // A Voice Studio score can itself be copied: keep its existing
+            // recording and note tags byte-for-byte rather than resetting it.
+            if (QJsonDocument::fromJson(copy->voiceStudioSession()).object().value("version").toInt() == 1) {
+                return;
+            }
+            if (!copy->setVoiceStudioData("{\"version\":1,\"clips\":[]}", {})) {
+                interactive()->error(muse::trc("appshell", "Could not initialize Voice Studio in the copy"),
+                                     muse::trc("appshell", "The copy was opened without an editable audio session."));
                 return;
             }
             const muse::Ret saved = copy->save();

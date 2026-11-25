@@ -304,6 +304,10 @@ void NotationPaintView::paintVoiceWaveform(QPainter* painter)
                 continue;
             }
             const auto bounds = system->canvasBoundingRect();
+            const auto viewBounds = fromLogical(muse::RectF(bounds.left(), bounds.top(), bounds.width(), bounds.height() + 28));
+            if (!viewBounds.toQRectF().intersects(QRectF(0, 0, width(), height()))) {
+                continue;
+            }
             const double startTick = system->firstMeasure()->tick().ticks();
             const double endTick = system->endTick().ticks();
             if (endTick <= startTick) {
