@@ -114,6 +114,9 @@ public:
 
     notation::IMasterNotationPtr masterNotation() const override;
     IProjectAudioSettingsPtr audioSettings() const override;
+    QByteArray voiceStudioSession() const override;
+    QByteArray voiceStudioSource() const override;
+    bool setVoiceStudioData(const QByteArray& session, const QByteArray& source) override;
 
 private:
     void setupProject();
@@ -158,5 +161,7 @@ private:
     bool m_isNeedSave = false;
     bool m_needAutoSave = false;
     bool m_hasNonUndoStackChanges = false;
+    QByteArray m_voiceStudioSession;
+    QByteArray m_voiceStudioSource;
 };
 }

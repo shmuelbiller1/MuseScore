@@ -458,9 +458,21 @@ void AppshellCommandsController::createEditableScoreCopy()
                                  muse::trc("appshell", "Choose an unused writable .mscz path and try again."));
             return;
         }
-        openProjectScenario()->openProject(destination).onResolve(this, [this](const muse::Ret& opened) {
+        openProjectScenario()->openProject(destination).onResolve(this, [this, destination](const muse::Ret& opened) {
             if (!opened) {
                 interactive()->error(muse::trc("appshell", "Score copy saved but not opened"), opened.toString());
+                return;
+            }
+            const auto copy = projectSession()->project();
+            if (!copy || copy->path() != destination
+                || !copy->setVoiceStudioData("{\"version\":1,\"clips\":[]}", {})) {
+                interactive()->error(muse::trc("appshell", "Score copy opened without Voice Studio"),
+                                     muse::trc("appshell", "Open the copy in this window and try again."));
+                return;
+            }
+            const muse::Ret saved = copy->save();
+            if (!saved) {
+                interactive()->error(muse::trc("appshell", "Could not save Voice Studio in the copy"), saved.toString());
             }
         });
     });

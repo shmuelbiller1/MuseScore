@@ -25,6 +25,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import QtQuick.Dialogs
 
 import Muse.Ui
 import Muse.UiComponents
@@ -85,6 +86,40 @@ FocusScope {
         }
 
         SeparatorLine { visible: tabPanel.visible }
+
+        // The native notation remains editable; this strip is only present
+        // when the active score contains a Voice Studio session marker.
+        RowLayout {
+            visible: notationView.voiceStudioCopy
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            spacing: 12
+
+            Label { text: qsTrc("notationscene", "Voice Studio score copy") }
+            Button {
+                text: qsTrc("notationscene", "Import voice WAV…")
+                onClicked: voiceFileDialog.open()
+            }
+            Label {
+                text: notationView.voiceStudioHasAudio
+                      ? qsTrc("notationscene", "Waveform follows the score systems")
+                      : qsTrc("notationscene", "No recording imported")
+            }
+            Label {
+                id: voiceStudioError
+                text: ""
+                color: "#b52d2d"
+                visible: text.length > 0
+            }
+        }
+
+        FileDialog {
+            id: voiceFileDialog
+            title: qsTrc("notationscene", "Import a local 16-bit PCM WAV")
+            nameFilters: ["WAV audio (*.wav)"]
+            onAccepted: voiceStudioError.text = notationView.importVoiceStudioWav(selectedFile)
+        }
 
         SplitView {
             id: splitView
