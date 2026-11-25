@@ -1,6 +1,6 @@
 # Native Voice Studio workspace — implementation contract
 
-**Status: design and acceptance plan, not an implemented native instrument.** The existing `share/choir-studio` HTML/JavaScript page is an offline MIDI-driven experiment. It does not edit a MuseScore score or render a waveform beneath the native notation. Do not relabel that sidecar as this feature.
+**Status: work in progress, not a finished native instrument.** The native branch now creates an independent editable `.mscz`, stores a 16-bit PCM WAV in the copy's `VoiceStudio/` archive entries, and paints a rough waveform overview on native score systems. The waveform uses score tempo but is **not yet horizontally note-aligned or repeat-aware**, and there is no native recording, note-tagging, drag/stretch, raw/processed audition, offline choir rendering, or WAV export. These are required before this feature can be called complete. The existing `share/choir-studio` HTML/JavaScript page remains a separate offline MIDI-driven experiment, not a native replacement.
 
 ## What the user is asking for
 

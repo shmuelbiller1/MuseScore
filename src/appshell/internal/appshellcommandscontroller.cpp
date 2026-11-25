@@ -458,6 +458,13 @@ void AppshellCommandsController::createEditableScoreCopy()
                                  muse::trc("appshell", "Choose an unused writable .mscz path and try again."));
             return;
         }
+        const QFile::Permissions permissions = QFile::permissions(destination.toQString());
+        if (!QFile::setPermissions(destination.toQString(), permissions | QFileDevice::ReadOwner | QFileDevice::WriteOwner)) {
+            QFile::remove(destination.toQString());
+            interactive()->error(muse::trc("appshell", "Could not make the copy editable"),
+                                 muse::trc("appshell", "Choose a writable location and try again."));
+            return;
+        }
         openProjectScenario()->openProject(destination).onResolve(this, [this, destination](const muse::Ret& opened) {
             if (!opened) {
                 interactive()->error(muse::trc("appshell", "Score copy saved but not opened"), opened.toString());

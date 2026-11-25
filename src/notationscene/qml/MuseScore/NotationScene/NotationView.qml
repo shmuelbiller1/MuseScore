@@ -103,7 +103,7 @@ FocusScope {
             }
             Label {
                 text: notationView.voiceStudioHasAudio
-                      ? qsTrc("notationscene", "Waveform follows the score systems")
+                      ? qsTrc("notationscene", "Tempo-aware waveform overview (not note-aligned)")
                       : qsTrc("notationscene", "No recording imported")
             }
             Label {

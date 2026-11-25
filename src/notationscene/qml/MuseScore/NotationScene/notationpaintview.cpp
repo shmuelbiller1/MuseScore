@@ -29,6 +29,7 @@
 #include "engraving/dom/system.h"
 #include "engraving/dom/measure.h"
 #include "engraving/dom/score.h"
+#include "engraving/dom/tempotimeline.h"
 
 #include <QFile>
 #include <QPainter>
@@ -122,6 +123,7 @@ void NotationPaintView::refreshVoiceStudio(const QByteArray& sourceOverride)
     m_voiceWav = m_voiceStudioCopy ? (sourceOverride.isEmpty() ? project->voiceStudioSource() : sourceOverride) : QByteArray();
     m_voicePeaks.clear();
     m_voiceFrames = 0;
+    m_voiceSampleRate = 0;
     if (!m_voiceWav.isEmpty()) {
         const QByteArray source = m_voiceWav;
         m_voiceWav.clear();
@@ -141,13 +143,15 @@ void NotationPaintView::refreshVoiceStudio(const QByteArray& sourceOverride)
                     && qFromLittleEndian<quint16>(reinterpret_cast<const uchar*>(source.constData() + offset)) == 1
                     && qFromLittleEndian<quint16>(reinterpret_cast<const uchar*>(source.constData() + offset + 14)) == 16) {
                     channels = qFromLittleEndian<quint16>(reinterpret_cast<const uchar*>(source.constData() + offset + 2));
+                    m_voiceSampleRate = int(qFromLittleEndian<quint32>(reinterpret_cast<const uchar*>(source.constData() + offset + 4)));
                 } else if (source.mid(offset - 8, 4) == "data") {
                     dataOffset = int(offset);
                     dataSize = int(length);
                 }
                 offset += length + (length & 1);
             }
-            if ((channels == 1 || channels == 2) && dataSize >= channels * 2) {
+            if ((channels == 1 || channels == 2) && m_voiceSampleRate >= 8000 && m_voiceSampleRate <= 192000
+                && dataSize >= channels * 2) {
                 m_voiceFrames = dataSize / (channels * 2);
                 const int bins = std::min(m_voiceFrames, 4096);
                 m_voicePeaks.fill(0.0f, bins);
@@ -213,10 +217,13 @@ void NotationPaintView::paintVoiceWaveform(QPainter* painter)
         return;
     }
     const auto& pages = notation()->elements()->pages();
-    if (pages.empty() || pages.back()->endTick().ticks() <= 0) {
+    if (pages.empty() || m_voiceSampleRate <= 0) {
         return;
     }
-    const double scoreTicks = pages.back()->endTick().ticks();
+    // Unexpanded score time: rests and tempo changes follow the written
+    // notation. Repeats still need separate take/playback mapping.
+    const auto& timeline = notation()->elements()->msScore()->tempoTimeline(false);
+    const double sourceDuration = double(m_voiceFrames) / m_voiceSampleRate;
     painter->save();
     painter->setPen(QPen(QColor(34, 130, 186, 180), 1));
     for (const auto* page : pages) {
@@ -236,7 +243,12 @@ void NotationPaintView::paintVoiceWaveform(QPainter* painter)
             const int columns = std::max(1, std::min(1024, int(right - left)));
             for (int column = 0; column < columns; ++column) {
                 const double scoreTick = startTick + (endTick - startTick) * column / columns;
-                const int bin = std::clamp(int(scoreTick / scoreTicks * m_voicePeaks.size()), 0, int(m_voicePeaks.size()) - 1);
+                const double seconds = timeline.utick2utime(int(scoreTick));
+                if (seconds < 0 || seconds >= sourceDuration) {
+                    continue;
+                }
+                const int bin = std::clamp(int(seconds / sourceDuration * m_voicePeaks.size()), 0,
+                                           int(m_voicePeaks.size()) - 1);
                 const double x = left + (right - left) * column / columns;
                 const double amplitude = 12 * m_voicePeaks.at(bin);
                 const auto top = fromLogical(muse::PointF(x, centerY - amplitude));

@@ -63,6 +63,7 @@ private:
     QByteArray m_voiceWav;
     QVector<float> m_voicePeaks;
     int m_voiceFrames = 0;
+    int m_voiceSampleRate = 0;
     bool m_voiceStudioCopy = false;
     project::INotationProjectPtr m_voiceStudioProject;
 };
