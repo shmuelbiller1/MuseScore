@@ -426,19 +426,26 @@ void AppshellCommandsController::createEditableScoreCopy()
         return;
     }
 
-    const QFileInfo sourceInfo(original->path().toQString());
+    const muse::io::path_t originalPath = original->path();
+    const QFileInfo sourceInfo(originalPath.toQString());
+    if (!sourceInfo.exists()) {
+        interactive()->error(muse::trc("appshell", "Original score is missing"),
+                             muse::trc("appshell", "Save the original locally before making a copy."));
+        return;
+    }
     const QString suggested = sourceInfo.dir().filePath(sourceInfo.completeBaseName() + " - Voice Studio.mscz");
     const std::vector<std::string> filter { muse::trc("appshell", "MuseScore score") + " (*.mscz)" };
     interactive()->selectSavingFile(muse::trc("appshell", "Create editable score copy"),
                                     muse::io::path_t(QUrl::fromLocalFile(suggested)), filter)
-    .onResolve(this, [this, original](const muse::io::path_t& destination) {
+    .onResolve(this, [this, original, originalPath](const muse::io::path_t& destination) {
         if (destination.empty()) {
             return;
         }
         const QFileInfo targetInfo(destination.toQString());
-        if (projectSession()->project() != original || original->isNeedSave() || !original->canSave() || original->path().empty()
-            || targetInfo.suffix().compare("mscz", Qt::CaseInsensitive) != 0 || targetInfo.exists()
-            || targetInfo.absoluteFilePath() == QFileInfo(original->path().toQString()).absoluteFilePath()) {
+        if (projectSession()->project() != original || original->isNeedSave() || !original->canSave()
+            || original->path() != originalPath || targetInfo.suffix().compare("mscz", Qt::CaseInsensitive) != 0
+            || targetInfo.exists() || targetInfo.isSymbolicLink()
+            || targetInfo.absoluteFilePath() == QFileInfo(originalPath.toQString()).absoluteFilePath()) {
             interactive()->error(muse::trc("appshell", "Choose a new score-copy path"),
                                  muse::trc("appshell", "The original changed, or this path is not a new .mscz file. Choose an unused location."));
             return;
