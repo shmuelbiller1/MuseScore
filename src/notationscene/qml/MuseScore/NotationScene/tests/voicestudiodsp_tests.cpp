@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "../voicestudiodsp.h"
+#include "../voicestudioclip.h"
 
 using namespace mu::notation::voice;
 
@@ -50,6 +51,43 @@ TEST(VoiceStudioDsp, OneSourceCanRenderBassAloneOrFourIndependentWrittenTargets)
         const auto voice = synthesize(take, rate, plan, writtenHz, rate / 2);
         EXPECT_NEAR(estimatePitch(voice, rate, rate / 4, rate / 4 + 2000), writtenHz, 10);
     }
+}
+
+TEST(VoiceStudioClip, UntaggedNotesBorrowSourceButKeepWrittenPitchAndTiming)
+{
+    QJsonObject tagged;
+    tagged.insert("tick", 0);
+    tagged.insert("track", 0);
+    tagged.insert("noteIndex", 0);
+    tagged.insert("sourceStartMs", 100);
+    tagged.insert("sourceEndMs", 650);
+    tagged.insert("outputPitch", 65);
+    tagged.insert("scoreOffsetTicks", 240);
+    tagged.insert("stretch", 1.5);
+    QJsonArray clips;
+    clips.append(tagged);
+
+    const QJsonObject sameNote = clipForWrittenNote(clips, 0, 0, 0);
+    EXPECT_EQ(sameNote.value("outputPitch").toInt(), 65);
+    EXPECT_EQ(sameNote.value("scoreOffsetTicks").toInt(), 240);
+
+    const QJsonObject nextNote = clipForWrittenNote(clips, 480, 0, 0);
+    EXPECT_EQ(nextNote.value("sourceStartMs").toInt(), 100);
+    EXPECT_EQ(nextNote.value("sourceEndMs").toInt(), 650);
+    EXPECT_FALSE(nextNote.contains("outputPitch"));
+    EXPECT_FALSE(nextNote.contains("scoreOffsetTicks"));
+    EXPECT_FALSE(nextNote.contains("stretch"));
+    EXPECT_EQ(nextNote.value("outputPitch").toInt(72), 72);
+    EXPECT_EQ(nextNote.value("scoreOffsetTicks").toInt(), 0);
+    EXPECT_DOUBLE_EQ(nextNote.value("stretch").toDouble(1), 1);
+}
+
+TEST(VoiceStudioClip, RejectsOffsetsBeforePlaybackStarts)
+{
+    EXPECT_TRUE(clipStartsBeforePlayback(0, -1));
+    EXPECT_TRUE(clipStartsBeforePlayback(480, -481));
+    EXPECT_FALSE(clipStartsBeforePlayback(480, -480));
+    EXPECT_FALSE(clipStartsBeforePlayback(0, 0));
 }
 
 TEST(VoiceStudioDsp, RejectsSilenceAndInvalidRanges)

@@ -38,6 +38,7 @@
 #include "engraving/dom/score.h"
 #include "engraving/dom/repeatlist.h"
 #include "engraving/dom/tempotimeline.h"
+#include "voicestudioclip.h"
 #include "voicestudiodsp.h"
 
 #include <QFile>
@@ -248,6 +249,9 @@ QString NotationPaintView::updateSelectedVoiceClip(int offsetTicks, int stretchP
     if (!selected.value("tagged").toBool() || offsetTicks < -9600 || offsetTicks > 9600
         || stretchPercent < 40 || stretchPercent > 250 || outputPitch < 0 || outputPitch > 127) {
         return QStringLiteral("Tag one selected note first; use offset ±9600 ticks, stretch 40–250%, and MIDI pitch 0–127.");
+    }
+    if (voice::clipStartsBeforePlayback(selected.value("tick").toInt(), offsetTicks)) {
+        return QStringLiteral("This offset moves the note before the score starts; reduce the negative offset.");
     }
     const auto project = studioProjectSession()->project();
     QJsonObject root = QJsonDocument::fromJson(project->voiceStudioSession()).object();
@@ -753,15 +757,7 @@ QString NotationPaintView::exportVoiceStudioWav(const QUrl& destination, const Q
                                 }
                                 continue;
                             }
-                            QJsonObject clip = clips.at(0).toObject(); // one source voice reused for untagged notes
-                            for (const auto& item : clips) {
-                                const QJsonObject candidate = item.toObject();
-                                if (candidate.value("tick").toInt(-1) == tick && candidate.value("track").toInt(-1) == track
-                                    && candidate.value("noteIndex").toInt(-1) == int(noteIndex)) {
-                                    clip = candidate;
-                                    break;
-                                }
-                            }
+                            const QJsonObject clip = voice::clipForWrittenNote(clips, tick, track, int(noteIndex));
                             const int begin = int(qint64(clip.value("sourceStartMs").toInt()) * m_processingRate / 1000);
                             const int end = int(qint64(clip.value("sourceEndMs").toInt()) * m_processingRate / 1000);
                             const int offset = clip.value("scoreOffsetTicks").toInt();
@@ -774,6 +770,9 @@ QString NotationPaintView::exportVoiceStudioWav(const QUrl& destination, const Q
                                 return QStringLiteral("A note has an invalid source slice, offset, stretch, or output pitch.");
                             }
                             const int playbackTick = passage->utick + tick - passage->tick;
+                            if (voice::clipStartsBeforePlayback(playbackTick, offset)) {
+                                return QStringLiteral("A clip begins before the score starts; reduce its negative offset.");
+                            }
                             const double startSeconds = timeline.utick2utime(playbackTick + offset);
                             int endTick = tick + chord->actualTicks().ticks();
                             const engraving::Note* tied = note;
@@ -787,7 +786,10 @@ QString NotationPaintView::exportVoiceStudioWav(const QUrl& destination, const Q
                             const double noteSeconds = timeline.utick2utime(playbackTick + endTick - tick)
                                                        - timeline.utick2utime(playbackTick);
                             if (!std::isfinite(startSeconds) || !std::isfinite(noteSeconds) || startSeconds < 0
-                                || startSeconds > 240 || noteSeconds <= 0 || noteSeconds * stretch > 240) {
+                                || noteSeconds <= 0) {
+                                return QStringLiteral("A written note has invalid playback timing; check its tempo and clip offset.");
+                            }
+                            if (startSeconds > 240 || noteSeconds * stretch > 240) {
                                 return QStringLiteral("A written note or clip exceeds the four-minute render limit.");
                             }
                             const int start = int(std::round(startSeconds * m_processingRate));
