@@ -72,7 +72,7 @@ void NotationPaintView::onLoadNotation(INotationPtr notation)
     });
 
     AbstractNotationPaintView::onLoadNotation(notation);
-    m_voiceStudioProject = projectSession()->project();
+    m_voiceStudioProject = studioProjectSession()->project();
     if (m_voiceStudioProject) {
         m_voiceStudioProject->needSaveChanged().onNotify(this, [this]() { refreshVoiceStudio(); });
     }
@@ -133,7 +133,7 @@ int NotationPaintView::voiceStudioAudioLengthMs() const
 QString NotationPaintView::tagVoiceNote(int sourceStartMs, int sourceEndMs)
 {
     if (!voiceStudioHasAudio() || sourceStartMs < 0 || sourceEndMs <= sourceStartMs
-        || sourceEndMs > voiceStudioAudioLengthMs() || !notation() || !projectSession()->project()) {
+        || sourceEndMs > voiceStudioAudioLengthMs() || !notation() || !studioProjectSession()->project()) {
         return QStringLiteral("Select a valid source interval in the imported recording.");
     }
     const auto selection = notation()->interaction()->selection();
@@ -151,7 +151,7 @@ QString NotationPaintView::tagVoiceNote(int sourceStartMs, int sourceEndMs)
     if (found == chordNotes.end()) {
         return QStringLiteral("The selected note is no longer in the score.");
     }
-    const auto project = projectSession()->project();
+    const auto project = studioProjectSession()->project();
     QJsonObject root = QJsonDocument::fromJson(project->voiceStudioSession()).object();
     if (root.value("version").toInt() != 1) {
         return QStringLiteral("Unsupported Voice Studio session version.");
@@ -186,7 +186,7 @@ QString NotationPaintView::tagVoiceNote(int sourceStartMs, int sourceEndMs)
 
 void NotationPaintView::refreshVoiceStudio(const QByteArray& sourceOverride)
 {
-    const auto project = projectSession()->project();
+    const auto project = studioProjectSession()->project();
     m_voiceStudioCopy = project && QJsonDocument::fromJson(project->voiceStudioSession()).object().value("version").toInt() == 1;
     m_voiceWav = m_voiceStudioCopy ? (sourceOverride.isEmpty() ? project->voiceStudioSource() : sourceOverride) : QByteArray();
     m_voicePeaks.clear();
@@ -243,10 +243,10 @@ void NotationPaintView::refreshVoiceStudio(const QByteArray& sourceOverride)
 
 QString NotationPaintView::importVoiceStudioWav(const QUrl& url)
 {
-    if (!m_voiceStudioCopy || !url.isLocalFile() || !projectSession()->project()) {
+    if (!m_voiceStudioCopy || !url.isLocalFile() || !studioProjectSession()->project()) {
         return QStringLiteral("Open a Voice Studio score copy and choose a local WAV file.");
     }
-    const auto project = projectSession()->project();
+    const auto project = studioProjectSession()->project();
     if (!QJsonDocument::fromJson(project->voiceStudioSession()).object().value("clips").toArray().isEmpty()) {
         return QStringLiteral("This score already has note tags; replacing the source would invalidate them.");
     }
@@ -295,7 +295,7 @@ void NotationPaintView::paintVoiceWaveform(QPainter* painter)
     // notation. Repeats still need separate take/playback mapping.
     const auto& timeline = notation()->elements()->msScore()->tempoTimeline(false);
     const double sourceDuration = double(m_voiceFrames) / m_voiceSampleRate;
-    const QJsonArray clips = QJsonDocument::fromJson(projectSession()->project()->voiceStudioSession()).object().value("clips").toArray();
+    const QJsonArray clips = QJsonDocument::fromJson(studioProjectSession()->project()->voiceStudioSession()).object().value("clips").toArray();
     painter->save();
     painter->setPen(QPen(QColor(34, 130, 186, 180), 1));
     for (const auto* page : pages) {

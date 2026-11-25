@@ -50,6 +50,8 @@ signals:
     void voiceStudioChanged();
 
 private:
+    muse::ContextInject<project::IProjectSession> studioProjectSession = { this };
+
     void paint(QPainter* painter) override;
     void paintVoiceWaveform(QPainter* painter);
     void refreshVoiceStudio(const QByteArray& sourceOverride = {});
