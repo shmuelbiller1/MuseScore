@@ -447,7 +447,8 @@ void AppshellCommandsController::createEditableScoreCopy()
             || targetInfo.exists() || targetInfo.isSymbolicLink()
             || targetInfo.absoluteFilePath() == QFileInfo(originalPath.toQString()).absoluteFilePath()) {
             interactive()->error(muse::trc("appshell", "Choose a new score-copy path"),
-                                 muse::trc("appshell", "The original changed, or this path is not a new .mscz file. Choose an unused location."));
+                                 muse::trc("appshell",
+                                           "The original changed, or this path is not a new .mscz file. Choose an unused location."));
             return;
         }
         const muse::Ret saved = original->save(destination, project::SaveMode::SaveCopy, false);
