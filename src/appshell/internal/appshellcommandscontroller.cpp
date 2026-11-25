@@ -27,6 +27,7 @@
 #include <QDragMoveEvent>
 #include <QDropEvent>
 #include <QFileOpenEvent>
+#include <QFile>
 #include <QFileInfo>
 #include <QDir>
 #include <QUrl>
@@ -41,7 +42,6 @@
 
 #include "audio/common/soundfonttypes.h"
 #include "project/inotationproject.h"
-#include "project/types/projecttypes.h"
 
 #include "../appshellcommands.h"
 #include "project/projectcommands.h"
@@ -407,8 +407,8 @@ void AppshellCommandsController::openExperimentalChoirPage()
 
 void AppshellCommandsController::createEditableScoreCopy()
 {
-    // Do not switch a second notation view onto the same mutable score. First
-    // create a separate local project, then let the normal project opener load it.
+    // The original is already saved and clean. Copy its bytes, not the live
+    // engraving model: SaveCopy may relayout headers and mutate that model.
     const auto original = projectSession()->project();
     if (!original || original->path().empty() || original->isCloudProject()) {
         interactive()->error(muse::trc("appshell", "Save the original locally first"),
@@ -428,9 +428,9 @@ void AppshellCommandsController::createEditableScoreCopy()
 
     const muse::io::path_t originalPath = original->path();
     const QFileInfo sourceInfo(originalPath.toQString());
-    if (!sourceInfo.exists()) {
-        interactive()->error(muse::trc("appshell", "Original score is missing"),
-                             muse::trc("appshell", "Save the original locally before making a copy."));
+    if (!sourceInfo.isFile() || sourceInfo.suffix().compare("mscz", Qt::CaseInsensitive) != 0) {
+        interactive()->error(muse::trc("appshell", "Save the original as .mscz first"),
+                             muse::trc("appshell", "Open a saved local .mscz score before making a copy."));
         return;
     }
     const QString suggested = sourceInfo.dir().filePath(sourceInfo.completeBaseName() + " - Voice Studio.mscz");
@@ -451,9 +451,11 @@ void AppshellCommandsController::createEditableScoreCopy()
                                            "The original changed, or this path is not a new .mscz file. Choose an unused location."));
             return;
         }
-        const muse::Ret saved = original->save(destination, project::SaveMode::SaveCopy, false);
-        if (!saved) {
-            interactive()->error(muse::trc("appshell", "Could not create the score copy"), saved.toString());
+        // QFile::copy refuses an existing destination even if it appears after
+        // our check, so no accidental overwrite or save of the original occurs.
+        if (!QFile::copy(originalPath.toQString(), destination.toQString())) {
+            interactive()->error(muse::trc("appshell", "Could not create the score copy"),
+                                 muse::trc("appshell", "Choose an unused writable .mscz path and try again."));
             return;
         }
         openProjectScenario()->openProject(destination).onResolve(this, [this](const muse::Ret& opened) {
