@@ -43,6 +43,16 @@ FocusScope {
     property alias readOnly: notationView.readOnly
 
     property alias paintView: notationView
+    property var selectedVoiceClip: ({})
+
+    function includedVoiceStaves() {
+        let result = []
+        if (sopranoVoice.checked) result.push({name: "S", staff: sopranoStaff.value - 1})
+        if (altoVoice.checked) result.push({name: "A", staff: altoStaff.value - 1})
+        if (tenorVoice.checked) result.push({name: "T", staff: tenorStaff.value - 1})
+        if (bassVoice.checked) result.push({name: "B", staff: bassStaff.value - 1})
+        return result
+    }
 
     property alias isNavigatorVisible: notationNavigator.visible
     property alias isBraillePanelVisible: brailleViewLoader.active
@@ -96,14 +106,27 @@ FocusScope {
             Layout.rightMargin: 12
             spacing: 12
 
-            Label { text: qsTrc("notationscene", "Voice Studio score copy") }
+            Label {
+                text: qsTrc("notationscene", "Voice Studio copy: %1").arg(notationView.voiceStudioCopyPath)
+                Layout.maximumWidth: 360
+                elide: Text.ElideMiddle
+                ToolTip.visible: copyPathHover.containsMouse
+                ToolTip.text: notationView.voiceStudioCopyPath
+                MouseArea { id: copyPathHover; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
+            }
             Button {
                 text: qsTrc("notationscene", "Import voice WAV…")
                 onClicked: voiceFileDialog.open()
             }
+            Button {
+                text: notationView.voiceRecording ? qsTrc("notationscene", "Stop recording")
+                                                  : qsTrc("notationscene", "Record voice")
+                onClicked: voiceStudioError.text = notationView.voiceRecording
+                            ? notationView.stopVoiceRecording() : notationView.startVoiceRecording()
+            }
             Label {
                 text: notationView.voiceStudioHasAudio
-                      ? qsTrc("notationscene", "Waveform follows written notes (repeat mapping pending)")
+                      ? qsTrc("notationscene", "Waveform follows written notes")
                       : qsTrc("notationscene", "No recording imported")
             }
             Label { text: qsTrc("notationscene", "Slice ms:") }
@@ -130,7 +153,157 @@ FocusScope {
                 text: ""
                 color: "#b52d2d"
                 visible: text.length > 0
+                Layout.fillWidth: true
+                elide: Text.ElideRight
             }
+        }
+
+        RowLayout {
+            visible: notationView.voiceStudioCopy
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            spacing: 8
+
+            Label {
+                text: root.selectedVoiceClip.writtenName
+                      ? qsTrc("notationscene", "Written %1 / output MIDI %2")
+                        .arg(root.selectedVoiceClip.writtenName).arg(root.selectedVoiceClip.outputPitch)
+                      : qsTrc("notationscene", "Select one written note")
+            }
+            Label { text: qsTrc("notationscene", "Offset ticks") }
+            SpinBox { id: clipOffset; from: -9600; to: 9600; editable: true }
+            Label { text: qsTrc("notationscene", "Stretch %") }
+            SpinBox { id: clipStretch; from: 40; to: 250; value: 100; editable: true }
+            Label { text: qsTrc("notationscene", "Output MIDI") }
+            SpinBox { id: clipPitch; from: 0; to: 127; value: 60; editable: true }
+            Button {
+                text: qsTrc("notationscene", "Apply clip edit")
+                enabled: root.selectedVoiceClip.tagged === true
+                onClicked: voiceStudioError.text = notationView.updateSelectedVoiceClip(
+                               clipOffset.value, clipStretch.value, clipPitch.value)
+            }
+            Button {
+                text: qsTrc("notationscene", "Remove tag")
+                enabled: root.selectedVoiceClip.tagged === true
+                onClicked: voiceStudioError.text = notationView.removeSelectedVoiceTag()
+            }
+        }
+
+        ScrollView {
+            visible: notationView.voiceStudioCopy
+            Layout.fillWidth: true
+            Layout.preferredHeight: 55
+            RowLayout {
+                spacing: 8
+                Label { text: qsTrc("notationscene", "Written choir parts (staff number):") }
+                CheckBox { id: sopranoVoice; text: "S"; checked: true }
+                SpinBox { id: sopranoStaff; from: 1; to: Math.max(1, notationView.voiceStudioStaffCount); value: 1 }
+                CheckBox { id: altoVoice; text: "A" }
+                SpinBox { id: altoStaff; from: 1; to: Math.max(1, notationView.voiceStudioStaffCount); value: Math.min(2, to) }
+                CheckBox { id: tenorVoice; text: "T" }
+                SpinBox { id: tenorStaff; from: 1; to: Math.max(1, notationView.voiceStudioStaffCount); value: Math.min(3, to) }
+                CheckBox { id: bassVoice; text: "B" }
+                SpinBox { id: bassStaff; from: 1; to: Math.max(1, notationView.voiceStudioStaffCount); value: Math.min(4, to) }
+                Label { text: qsTrc("notationscene", "Arrangement semitones") }
+                SpinBox { id: arrangementShift; from: -24; to: 24; editable: true }
+                Label { text: qsTrc("notationscene", "A minor → G minor: −2") }
+                Button {
+                    text: qsTrc("notationscene", "Save arrangement")
+                    onClicked: voiceStudioError.text = notationView.saveVoiceStudioArrangement(
+                               root.includedVoiceStaves(), arrangementShift.value)
+                }
+                Button {
+                    text: qsTrc("notationscene", "Written/output note progression")
+                    onClicked: {
+                        progressionText.text = notationView.voiceStudioNoteProgression(
+                                               root.includedVoiceStaves(), arrangementShift.value)
+                        progressionDialog.open()
+                    }
+                }
+                Button {
+                    text: qsTrc("notationscene", "Export processed WAV…")
+                    enabled: notationView.voiceStudioHasAudio
+                    onClicked: voiceExportDialog.open()
+                }
+                Button {
+                    text: qsTrc("notationscene", "Hear raw")
+                    enabled: root.selectedVoiceClip.tagged === true
+                    onClicked: voiceStudioError.text = notationView.auditionVoiceSlice(false, arrangementShift.value)
+                }
+                Button {
+                    text: qsTrc("notationscene", "Hear processed")
+                    enabled: root.selectedVoiceClip.tagged === true
+                    onClicked: voiceStudioError.text = notationView.auditionVoiceSlice(true, arrangementShift.value)
+                }
+                Button {
+                    text: qsTrc("notationscene", "Save note preview WAV…")
+                    enabled: root.selectedVoiceClip.tagged === true
+                    onClicked: { voicePreviewDialog.processed = true; voicePreviewDialog.open() }
+                }
+            }
+        }
+
+        Connections {
+            target: notationView
+            function onVoiceStudioChanged() {
+                const saved = notationView.voiceStudioArrangement()
+                const parts = saved.includedStaves
+                if (!parts || parts.length === 0) return
+                const role = name => parts.find(part => part.name === name)
+                const s = role("S"), a = role("A"), t = role("T"), b = role("B")
+                sopranoVoice.checked = !!s
+                altoVoice.checked = !!a
+                tenorVoice.checked = !!t
+                bassVoice.checked = !!b
+                if (s) sopranoStaff.value = s.staff + 1
+                if (a) altoStaff.value = a.staff + 1
+                if (t) tenorStaff.value = t.staff + 1
+                if (b) bassStaff.value = b.staff + 1
+                arrangementShift.value = saved.transposeSemitones ?? 0
+            }
+            function onVoiceStudioSelectionChanged() {
+                root.selectedVoiceClip = notationView.selectedVoiceClip()
+                if (root.selectedVoiceClip.tagged) {
+                    sourceStart.value = root.selectedVoiceClip.sourceStartMs
+                    sourceEnd.value = root.selectedVoiceClip.sourceEndMs
+                }
+                clipOffset.value = root.selectedVoiceClip.scoreOffsetTicks ?? 0
+                clipStretch.value = root.selectedVoiceClip.stretchPercent ?? 100
+                clipPitch.value = root.selectedVoiceClip.outputPitch ?? 60
+            }
+        }
+
+        Dialog {
+            id: progressionDialog
+            title: qsTrc("notationscene", "Written and output note progression")
+            modal: true
+            width: Math.min(root.width - 40, 950)
+            height: Math.min(root.height - 40, 430)
+            anchors.centerIn: Overlay.overlay
+            standardButtons: Dialog.Ok
+            ScrollView {
+                anchors.fill: parent
+                TextArea { id: progressionText; readOnly: true; wrapMode: TextEdit.Wrap }
+            }
+        }
+
+        FileDialog {
+            id: voiceExportDialog
+            fileMode: FileDialog.SaveFile
+            title: qsTrc("notationscene", "Export processed choir WAV")
+            nameFilters: ["WAV audio (*.wav)"]
+            onAccepted: voiceStudioError.text = notationView.exportVoiceStudioWav(
+                            selectedFile, root.includedVoiceStaves(), arrangementShift.value)
+        }
+        FileDialog {
+            id: voicePreviewDialog
+            property bool processed: false
+            fileMode: FileDialog.SaveFile
+            title: processed ? qsTrc("notationscene", "Save processed note preview")
+                             : qsTrc("notationscene", "Save original source slice")
+            nameFilters: ["WAV audio (*.wav)"]
+            onAccepted: voiceStudioError.text = notationView.exportSelectedVoicePreview(
+                            selectedFile, processed, arrangementShift.value)
         }
 
         FileDialog {
