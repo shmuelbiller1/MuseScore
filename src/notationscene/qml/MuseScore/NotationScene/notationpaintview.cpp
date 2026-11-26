@@ -150,7 +150,7 @@ void NotationPaintView::onLoadNotation(INotationPtr notation)
 void NotationPaintView::onUnloadNotation(INotationPtr notation)
 {
     setVoiceRangeDragMode(false);
-    m_voiceStartTick = -1;
+    m_voiceStartEndpoint = {};
     m_voiceStartStaff = -1;
     discardVoiceRecording();
     closeVoicePlayback();
@@ -328,34 +328,23 @@ static engraving::ChordRest* selectedVoiceChordRest(const INotationSelectionPtr&
     return element && element->isChordRest() ? engraving::toChordRest(element) : nullptr;
 }
 
-static engraving::ChordRest* voiceChordRestAt(engraving::Score* score, int tick, int staff)
-{
-    auto* segment = score->tick2segment(engraving::Fraction::fromTicks(tick), true,
-                                        engraving::SegmentType::ChordRest, false);
-    if (!segment || segment->tick().ticks() != tick) {
-        return nullptr;
-    }
-    for (int v = 0; v < 4; ++v) {
-        auto* element = segment->element(staff * 4 + v);
-        if (element && element->isChordRest()) {
-            return engraving::toChordRest(element);
-        }
-    }
-    return nullptr;
-}
-
-QString NotationPaintView::selectVoiceNoteSpan(int firstTick, int lastTick, int staff, bool requireCopyable)
+QString NotationPaintView::selectVoiceNoteSpan(voice_range::Endpoint start, voice_range::Endpoint end, bool requireCopyable)
 {
     if (!m_voiceStudioCopy || !notation() || !notation()->elements()->msScore()
-        || staff < 0 || staff >= voiceStudioStaffCount()) {
+        || start.track < 0 || end.track < 0 || start.track / 4 != end.track / 4
+        || start.track / 4 >= voiceStudioStaffCount()) {
         return QStringLiteral("Open a Voice Studio copy and select notes on one written staff.");
     }
     auto* score = notation()->elements()->msScore();
-    auto* first = voiceChordRestAt(score, std::min(firstTick, lastTick), staff);
-    auto* last = voiceChordRestAt(score, std::max(firstTick, lastTick), staff);
+    if (end.tick < start.tick) {
+        std::swap(start, end);
+    }
+    auto* first = voice_range::chordRestAt(score, start);
+    auto* last = voice_range::chordRestAt(score, end);
     if (!first || !last) {
         return QStringLiteral("A selected note or rest is no longer present in this score.");
     }
+    const int staff = start.track / 4;
     auto interaction = notation()->interaction();
     interaction->clearSelection();
     if (!interaction->select({ first }, SelectType::RANGE, staff)
@@ -377,21 +366,21 @@ QString NotationPaintView::markVoiceNoteRangeStart()
     if (!note) {
         return QStringLiteral("Click exactly one starting note or rest on the source staff first.");
     }
-    m_voiceStartTick = note->tick().ticks();
+    m_voiceStartEndpoint = { note->tick().ticks(), int(note->track()) };
     m_voiceStartStaff = int(note->staffIdx());
     return {};
 }
 
 QString NotationPaintView::selectVoiceNoteThroughSelection()
 {
-    if (!m_voiceStudioCopy || !notation() || m_voiceStartTick < 0) {
+    if (!m_voiceStudioCopy || !notation() || m_voiceStartEndpoint.tick < 0) {
         return QStringLiteral("Mark the starting note or rest first.");
     }
     auto* note = selectedVoiceChordRest(notation()->interaction()->selection());
     if (!note || int(note->staffIdx()) != m_voiceStartStaff) {
         return QStringLiteral("Click an ending note or rest on the same source staff.");
     }
-    return selectVoiceNoteSpan(m_voiceStartTick, note->tick().ticks(), m_voiceStartStaff);
+    return selectVoiceNoteSpan(m_voiceStartEndpoint, { note->tick().ticks(), int(note->track()) });
 }
 
 bool NotationPaintView::voiceRangeDragMode() const
@@ -407,15 +396,16 @@ void NotationPaintView::setVoiceRangeDragMode(bool enabled)
     }
     m_voiceRangeDragMode = enabled;
     m_voiceRangeDragging = false;
-    m_voiceLastTick = -1;
+    m_voiceLastEndpoint = {};
     m_voiceRangeScrollTimer.stop();
     setCursor(enabled ? QCursor(Qt::CrossCursor) : QCursor());
     emit voiceRangeDragModeChanged();
 }
 
-bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, int& tick, int& staff) const
+bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, voice_range::Endpoint& endpoint) const
 {
-    if (!notation() || !notation()->elements()->msScore()) {
+    if (!notation() || !notation()->elements()->msScore()
+        || (nearest && (staffOnly < 0 || staffOnly >= voiceStudioStaffCount()))) {
         return false;
     }
     if (!nearest) {
@@ -426,8 +416,7 @@ bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffO
                 item = engraving::toNote(item)->chord();
             }
             if (item->isChordRest() && (staffOnly < 0 || int(item->staffIdx()) == staffOnly)) {
-                tick = item->tick().ticks();
-                staff = int(item->staffIdx());
+                endpoint = { item->tick().ticks(), int(item->track()) };
                 return true;
             }
         }
@@ -458,8 +447,7 @@ bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffO
                         const double distance = dx * dx + dy * dy;
                         if (distance < bestDistance) {
                             bestDistance = distance;
-                            tick = item->tick().ticks();
-                            staff = staffOnly;
+                            endpoint = { item->tick().ticks(), int(item->track()) };
                         }
                     }
                 }
@@ -474,10 +462,11 @@ void NotationPaintView::updateVoiceRangeDrag()
     if (!m_voiceRangeDragging || m_voiceStartStaff < 0) {
         return;
     }
-    int tick = -1, staff = -1;
-    if (voiceNoteAt(m_voiceDragPosition, true, m_voiceStartStaff, tick, staff) && tick != m_voiceLastTick) {
-        if (selectVoiceNoteSpan(m_voiceStartTick, tick, staff, false).isEmpty()) {
-            m_voiceLastTick = tick;
+    voice_range::Endpoint end;
+    if (voiceNoteAt(m_voiceDragPosition, true, m_voiceStartStaff, end)
+        && (end.tick != m_voiceLastEndpoint.tick || end.track != m_voiceLastEndpoint.track)) {
+        if (selectVoiceNoteSpan(m_voiceStartEndpoint, end, false).isEmpty()) {
+            m_voiceLastEndpoint = end;
         }
     }
 }
@@ -489,14 +478,14 @@ void NotationPaintView::mousePressEvent(QMouseEvent* event)
         return;
     }
     forceFocusIn();
-    int tick = -1, staff = -1;
-    if (voiceNoteAt(event->position(), false, -1, tick, staff)) {
-        m_voiceStartTick = tick;
-        m_voiceStartStaff = staff;
-        m_voiceLastTick = tick;
+    voice_range::Endpoint start;
+    if (voiceNoteAt(event->position(), false, -1, start)) {
+        m_voiceStartEndpoint = start;
+        m_voiceStartStaff = start.track / 4;
+        m_voiceLastEndpoint = start;
         m_voiceDragPosition = event->position();
         m_voiceDragOrigin = event->position();
-        m_voiceRangeDragging = selectVoiceNoteSpan(tick, tick, staff, false).isEmpty();
+        m_voiceRangeDragging = selectVoiceNoteSpan(start, start, false).isEmpty();
         if (m_voiceRangeDragging) {
             m_voiceRangeScrollTimer.start();
         }

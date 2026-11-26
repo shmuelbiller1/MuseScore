@@ -74,6 +74,7 @@ qt_add_qml_module(notationscene_qml
         notationnavigator.h
         notationpaintview.cpp
         notationpaintview.h
+        voicestudiorange.h
         notationruler.cpp
         notationruler.h
         notationstatusbarmodel.cpp

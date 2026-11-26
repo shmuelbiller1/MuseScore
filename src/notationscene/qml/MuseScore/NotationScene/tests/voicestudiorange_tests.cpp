@@ -18,6 +18,7 @@
 #include "engraving/dom/measure.h"
 #include "engraving/dom/segment.h"
 #include "engraving/tests/utils/scorerw.h"
+#include "voicestudiorange.h"
 
 using namespace mu::engraving;
 
@@ -104,5 +105,44 @@ TEST(VoiceStudioRange, NativeSelectionStopsAfterClickedNoteWithinMeasure)
     EXPECT_EQ(score->selection().tickEnd(), measure->tick() + Fraction(3, 4));
     EXPECT_TRUE(score->selection().canCopy());
 
+    delete score;
+}
+
+TEST(VoiceStudioRange, EndpointsKeepClickedTrackWhenVoicesShareATick)
+{
+    MasterScore* score = ScoreRW::readScore(String(u"data/voice_range_multivoice.mscx"));
+    ASSERT_TRUE(score);
+    Measure* measure = score->firstMeasure();
+    ASSERT_TRUE(measure);
+    Segment* first = measure->first(SegmentType::ChordRest);
+    ASSERT_TRUE(first);
+    Segment* sharedTick = first->next(SegmentType::ChordRest);
+    ASSERT_TRUE(sharedTick);
+    ASSERT_TRUE(first->element(0));
+    ASSERT_TRUE(sharedTick->element(0));
+    ASSERT_TRUE(sharedTick->element(1));
+
+    const int tick = sharedTick->tick().ticks();
+    auto* voice1 = mu::notation::voice_range::chordRestAt(score, { tick, 0 });
+    auto* voice2 = mu::notation::voice_range::chordRestAt(score, { tick, 1 });
+    ASSERT_EQ(voice1, sharedTick->element(0));
+    ASSERT_EQ(voice2, sharedTick->element(1));
+    EXPECT_EQ(mu::notation::voice_range::chordRestAt(score, { tick, 2 }), nullptr);
+
+    // Voice 1 has a half note here, but the clicked voice-2 quarter note
+    // must end the written span after just one quarter (not after the half).
+    auto* start = mu::notation::voice_range::chordRestAt(score, { first->tick().ticks(), 0 });
+    ASSERT_TRUE(start);
+    score->select(start, SelectType::RANGE, 0);
+    score->select(voice2, SelectType::RANGE, 0);
+    EXPECT_EQ(score->selection().tickStart(), measure->tick());
+    EXPECT_EQ(score->selection().tickEnd(), measure->tick() + Fraction(1, 2));
+    EXPECT_EQ(score->selection().staffStart(), size_t(0));
+    EXPECT_EQ(score->selection().staffEnd(), size_t(1));
+
+    score->deselectAll();
+    score->select(start, SelectType::RANGE, 0);
+    score->select(voice1, SelectType::RANGE, 0);
+    EXPECT_EQ(score->selection().tickEnd(), measure->tick() + Fraction(3, 4));
     delete score;
 }
