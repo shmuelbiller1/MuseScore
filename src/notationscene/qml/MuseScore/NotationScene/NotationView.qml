@@ -254,7 +254,65 @@ FocusScope {
             Layout.leftMargin: 12
             Layout.rightMargin: 12
             wrapMode: Text.WordWrap
-            text: qsTrc("notationscene", "Copy a run of written notes: click its first note or measure, Shift-click the last, press Ctrl+C, select the destination note/rest in another staff, and press Ctrl+V. You can edit the pasted part independently. Audio tags are not copied. A red notehead outline means this note cannot currently be rendered; check the recording, clip, pitch, and saved arrangement.")
+            text: qsTrc("notationscene", "Select a whole run across systems or pages below, then Ctrl+C, click the destination note/rest in another staff, and Ctrl+V. The pasted notes can be edited independently; audio tags stay with the original staff. A red outline marks a note that cannot currently render.")
+        }
+
+        ScrollView {
+            visible: notationView.voiceStudioCopy
+            Layout.fillWidth: true
+            Layout.preferredHeight: 55
+            RowLayout {
+                spacing: 8
+                Label { text: qsTrc("notationscene", "Written range · staff") }
+                SpinBox { id: rangeStaff; from: 1; to: Math.max(1, notationView.voiceStudioStaffCount); value: 1 }
+                Label { text: qsTrc("notationscene", "from measure") }
+                SpinBox { id: rangeFirst; from: 1; to: 10000; value: 1; editable: true }
+                Button {
+                    text: qsTrc("notationscene", "From selected")
+                    onClicked: {
+                        const point = notationView.voiceStudioSelectedMeasure(false)
+                        if (point.measure) {
+                            rangeFirst.value = point.measure
+                            rangeStaff.value = point.staff
+                            voiceStudioError.text = ""
+                        } else {
+                            voiceStudioError.text = qsTrc("notationscene", "Click a source note, rest, or measure first.")
+                        }
+                    }
+                }
+                Label { text: qsTrc("notationscene", "through measure") }
+                SpinBox { id: rangeLast; from: 1; to: 10000; value: 2; editable: true }
+                Button {
+                    text: qsTrc("notationscene", "Through selected")
+                    onClicked: {
+                        const point = notationView.voiceStudioSelectedMeasure(true)
+                        if (point.measure && point.staff === rangeStaff.value) {
+                            rangeLast.value = point.measure
+                            voiceStudioError.text = ""
+                        } else {
+                            voiceStudioError.text = qsTrc("notationscene", "Click the ending note or measure on the same source staff.")
+                        }
+                    }
+                }
+                Button {
+                    text: qsTrc("notationscene", "Select full range")
+                    onClicked: voiceStudioError.text = notationView.selectVoiceStudioRange(
+                               rangeStaff.value, rangeFirst.value, rangeLast.value)
+                }
+                Button {
+                    text: qsTrc("notationscene", "Select entire staff")
+                    onClicked: {
+                        rangeFirst.value = 1
+                        rangeLast.value = notationView.voiceStudioMeasureCount()
+                        voiceStudioError.text = notationView.selectVoiceStudioRange(
+                                               rangeStaff.value, rangeFirst.value, rangeLast.value)
+                    }
+                }
+                Button {
+                    text: qsTrc("notationscene", "Copy selected range")
+                    onClicked: voiceStudioError.text = notationView.copyVoiceStudioRange()
+                }
+            }
         }
 
         Connections {

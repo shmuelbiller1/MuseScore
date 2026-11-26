@@ -197,6 +197,106 @@ int NotationPaintView::voiceStudioStaffCount() const
     return notation() && notation()->elements()->msScore() ? int(notation()->elements()->msScore()->nstaves()) : 0;
 }
 
+int NotationPaintView::voiceStudioMeasureCount() const
+{
+    if (!notation() || !notation()->elements()->msScore()) {
+        return 0;
+    }
+    int count = 0;
+    for (const auto* measure = notation()->elements()->msScore()->firstMeasure(); measure; measure = measure->nextMeasure()) {
+        ++count;
+    }
+    return count;
+}
+
+QVariantMap NotationPaintView::voiceStudioSelectedMeasure(bool useEnd) const
+{
+    if (!m_voiceStudioCopy || !notation() || !notation()->elements()->msScore()) {
+        return {};
+    }
+    const auto selection = notation()->interaction()->selection();
+    int tick = -1;
+    int staff = -1;
+    if (selection->isRange()) {
+        tick = useEnd ? selection->range()->endTick().ticks() - 1 : selection->range()->startTick().ticks();
+        staff = int(selection->range()->startStaffIndex());
+    } else {
+        const auto notes = selection->notes();
+        if (notes.size() == 1 && notes.front()->chord()) {
+            tick = notes.front()->chord()->tick().ticks();
+            staff = int(notes.front()->track()) / 4;
+        } else {
+            const auto* element = selection->element();
+            if (!element || !element->isChordRest()) {
+                return {};
+            }
+            tick = element->tick().ticks();
+            staff = int(element->staffIdx());
+        }
+    }
+    int number = 1;
+    for (const auto* measure = notation()->elements()->msScore()->firstMeasure(); measure;
+         measure = measure->nextMeasure(), ++number) {
+        if (tick >= measure->tick().ticks() && tick < (measure->tick() + measure->ticks()).ticks()) {
+            QVariantMap result;
+            result.insert("measure", number);
+            result.insert("staff", staff + 1);
+            return result;
+        }
+    }
+    return {};
+}
+
+QString NotationPaintView::selectVoiceStudioRange(int staffNumber, int firstMeasure, int lastMeasure)
+{
+    if (!m_voiceStudioCopy || !notation() || !notation()->elements()->msScore()
+        || staffNumber < 1 || staffNumber > voiceStudioStaffCount()
+        || firstMeasure < 1 || lastMeasure < firstMeasure || lastMeasure > 10000) {
+        return QStringLiteral("Choose an existing source staff and a first/last measure in score order.");
+    }
+    engraving::Measure* first = nullptr;
+    engraving::Measure* last = nullptr;
+    int number = 1;
+    for (auto* measure = notation()->elements()->msScore()->firstMeasure(); measure && number <= lastMeasure;
+         measure = measure->nextMeasure(), ++number) {
+        if (number == firstMeasure) {
+            first = measure;
+        }
+        if (number == lastMeasure) {
+            last = measure;
+        }
+    }
+    if (!first || !last) {
+        return QStringLiteral("The selected measure number exceeds the end of this score.");
+    }
+    auto interaction = notation()->interaction();
+    interaction->clearSelection();
+    const int staffIndex = staffNumber - 1;
+    if (!interaction->select({ first }, SelectType::RANGE, staffIndex)
+        || (last != first && !interaction->select({ last }, SelectType::RANGE, staffIndex))
+        || !interaction->selection()->isRange() || !interaction->selection()->canCopy()) {
+        interaction->clearSelection();
+        return QStringLiteral("Could not select this complete written range; check for incomplete tuplets or tremolos.");
+    }
+    scheduleRedraw();
+    return {};
+}
+
+QString NotationPaintView::copyVoiceStudioRange()
+{
+    if (!m_voiceStudioCopy || !notation()) {
+        return QStringLiteral("Open an editable Voice Studio score copy first.");
+    }
+    auto interaction = notation()->interaction();
+    const auto selection = interaction->selection();
+    if (!selection->isRange() || !selection->canCopy()
+        || selection->range()->endStaffIndex() != selection->range()->startStaffIndex() + 1) {
+        return QStringLiteral("Select a complete range on one written staff before copying.");
+    }
+    interaction->copySelection(); // Native MuseScore notation clipboard; no audio tags.
+    return {};
+}
+
 QVariantMap NotationPaintView::selectedVoiceClip() const
 {
     QVariantMap result;

@@ -55,6 +55,10 @@ public:
     bool voiceStudioHasAudio() const;
     int voiceStudioAudioLengthMs() const;
     int voiceStudioStaffCount() const;
+    Q_INVOKABLE int voiceStudioMeasureCount() const;
+    Q_INVOKABLE QVariantMap voiceStudioSelectedMeasure(bool useEnd) const;
+    Q_INVOKABLE QString selectVoiceStudioRange(int staffNumber, int firstMeasure, int lastMeasure);
+    Q_INVOKABLE QString copyVoiceStudioRange();
     bool voiceRecording() const;
     Q_INVOKABLE QString startVoiceRecording();
     Q_INVOKABLE QString stopVoiceRecording();
