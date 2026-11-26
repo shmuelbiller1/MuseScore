@@ -94,6 +94,7 @@ private:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseUngrabEvent() override;
     bool voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, int& tick, int& staff) const;
     QString selectVoiceNoteSpan(int firstTick, int lastTick, int staff, bool requireCopyable = true);
     void updateVoiceRangeDrag();

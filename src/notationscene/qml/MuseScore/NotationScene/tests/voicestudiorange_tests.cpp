@@ -70,3 +70,39 @@ TEST(VoiceStudioRange, NativeSelectionCanStartInsideMeasureAndEndOnAnotherMeasur
 
     delete score;
 }
+
+TEST(VoiceStudioRange, NativeSelectionStopsAfterClickedNoteWithinMeasure)
+{
+    MasterScore* score = ScoreRW::readScore(String(u"data/test.mscx"));
+    ASSERT_TRUE(score);
+    Measure* measure = score->firstMeasure();
+    ASSERT_TRUE(measure);
+    Segment* first = measure->first(SegmentType::ChordRest);
+    ASSERT_TRUE(first);
+    Segment* second = first->next(SegmentType::ChordRest);
+    ASSERT_TRUE(second);
+    Segment* third = second->next(SegmentType::ChordRest);
+    ASSERT_TRUE(third);
+    ASSERT_TRUE(second->element(0));
+    ASSERT_TRUE(third->element(0));
+
+    // The native range API must include the end note, but not the fourth.
+    score->select(second->element(0), SelectType::RANGE, 0);
+    score->select(third->element(0), SelectType::RANGE, 0);
+    EXPECT_TRUE(score->selection().isRange());
+    EXPECT_EQ(score->selection().tickStart(), measure->tick() + Fraction(1, 4));
+    EXPECT_EQ(score->selection().tickEnd(), measure->tick() + Fraction(3, 4));
+    EXPECT_EQ(score->selection().staffStart(), size_t(0));
+    EXPECT_EQ(score->selection().staffEnd(), size_t(1));
+    EXPECT_TRUE(score->selection().canCopy());
+
+    // Selecting in reverse order should produce the same written span.
+    score->deselectAll();
+    score->select(third->element(0), SelectType::RANGE, 0);
+    score->select(second->element(0), SelectType::RANGE, 0);
+    EXPECT_EQ(score->selection().tickStart(), measure->tick() + Fraction(1, 4));
+    EXPECT_EQ(score->selection().tickEnd(), measure->tick() + Fraction(3, 4));
+    EXPECT_TRUE(score->selection().canCopy());
+
+    delete score;
+}

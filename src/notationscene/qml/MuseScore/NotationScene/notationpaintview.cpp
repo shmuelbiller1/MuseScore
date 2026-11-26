@@ -47,6 +47,7 @@
 #include <QSet>
 #include <QHash>
 #include <QDateTime>
+#include <QCursor>
 #include <QMouseEvent>
 #include <QTimer>
 
@@ -408,7 +409,7 @@ void NotationPaintView::setVoiceRangeDragMode(bool enabled)
     m_voiceRangeDragging = false;
     m_voiceLastTick = -1;
     m_voiceRangeScrollTimer.stop();
-    setCursor(enabled ? Qt::CrossCursor : Qt::ArrowCursor);
+    setCursor(enabled ? QCursor(Qt::CrossCursor) : QCursor());
     emit voiceRangeDragModeChanged();
 }
 
@@ -452,7 +453,9 @@ bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffO
                             continue;
                         }
                         const QPointF center = fromLogical(item->canvasBoundingRect()).toQRectF().center();
-                        const double distance = std::pow(center.x() - pos.x(), 2) + std::pow(center.y() - pos.y(), 2);
+                        const double dx = center.x() - pos.x();
+                        const double dy = center.y() - pos.y();
+                        const double distance = dx * dx + dy * dy;
                         if (distance < bestDistance) {
                             bestDistance = distance;
                             tick = item->tick().ticks();
@@ -526,6 +529,16 @@ void NotationPaintView::mouseReleaseEvent(QMouseEvent* event)
         setVoiceRangeDragMode(false); // Restore ordinary notation editing after one gesture.
     }
     event->accept();
+}
+
+void NotationPaintView::mouseUngrabEvent()
+{
+    // Window switches and cancelled grabs must not leave the scroll timer
+    // moving the score without a held mouse button.
+    if (m_voiceRangeDragMode) {
+        setVoiceRangeDragMode(false);
+    }
+    QQuickPaintedItem::mouseUngrabEvent();
 }
 
 QVariantMap NotationPaintView::selectedVoiceClip() const
