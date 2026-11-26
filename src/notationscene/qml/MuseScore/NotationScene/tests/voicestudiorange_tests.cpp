@@ -18,7 +18,7 @@
 #include "engraving/dom/measure.h"
 #include "engraving/dom/segment.h"
 #include "engraving/tests/utils/scorerw.h"
-#include "voicestudiorange.h"
+#include "../voicestudiorange.h"
 
 using namespace mu::engraving;
 
