@@ -27,6 +27,8 @@
 #include <QBuffer>
 #include <QDir>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include "global/concurrency/concurrent.h"
 #include "global/io/buffer.h"
@@ -170,6 +172,11 @@ Ret NotationProject::doLoad(const muse::io::path_t& path, const OpenParams& open
     if (!ret) {
         return ret;
     }
+
+    // Voice Studio files belong to this project, not the original or a global
+    // session. Keep them untouched when the notation is saved/relaid out.
+    m_voiceStudioSession = reader.readVoiceStudioFile(u"session.json").toQByteArray();
+    m_voiceStudioSource = reader.readVoiceStudioFile(u"source.wav").toQByteArray();
 
     // Load engraving project
     m_engravingProject->setFileInfoProvider(std::make_shared<ProjectFileInfoProvider>(this));
@@ -923,6 +930,13 @@ Ret NotationProject::writeProject(MscWriter& msczWriter, bool createThumbnail, c
         return make_ret(Ret::Code::Ok);
     }
 
+    if (!m_voiceStudioSession.isEmpty()) {
+        msczWriter.writeVoiceStudioFile(u"session.json", ByteArray::fromQByteArrayNoCopy(m_voiceStudioSession));
+        if (!m_voiceStudioSource.isEmpty()) {
+            msczWriter.writeVoiceStudioFile(u"source.wav", ByteArray::fromQByteArrayNoCopy(m_voiceStudioSource));
+        }
+    }
+
     // Write excerpt view settings and solo-mute state
     for (const IExcerptNotationPtr& excerpt : m_masterNotation->excerpts()) {
         muse::io::path_t path = u"Excerpts/" + excerpt->fileName() + u"/";
@@ -1279,4 +1293,35 @@ void NotationProject::setMetaInfo(const ProjectMeta& meta, bool undoable)
 IProjectAudioSettingsPtr NotationProject::audioSettings() const
 {
     return m_projectAudioSettings;
+}
+
+QByteArray NotationProject::voiceStudioSession() const
+{
+    return m_voiceStudioSession;
+}
+
+QByteArray NotationProject::voiceStudioSource() const
+{
+    return m_voiceStudioSource;
+}
+
+bool NotationProject::setVoiceStudioData(const QByteArray& session, const QByteArray& source)
+{
+    // No network assets or references to files outside the score container.
+    constexpr qsizetype maxSourceSize = 64 * 1024 * 1024;
+    if (session.size() > 1024 * 1024 || source.size() > maxSourceSize) {
+        return false;
+    }
+    const QJsonDocument document = QJsonDocument::fromJson(session);
+    if (!document.isObject() || document.object().value("version").toInt() != 1) {
+        return false;
+    }
+    if (m_voiceStudioSession == session && m_voiceStudioSource == source) {
+        return true;
+    }
+    m_voiceStudioSession = session;
+    m_voiceStudioSource = source;
+    m_hasNonUndoStackChanges = true;
+    markAsUnsaved();
+    return true;
 }

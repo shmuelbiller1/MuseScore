@@ -243,6 +243,15 @@ ByteArray MscReader::readViewSettingsJsonFile(const muse::io::path_t& pathPrefix
     return fileData(pathPrefix.toString() + u"viewsettings.json");
 }
 
+muse::ByteArray MscReader::readVoiceStudioFile(const String& name) const
+{
+    if (name != u"session.json" && name != u"source.wav") {
+        return ByteArray();
+    }
+    const String path = u"VoiceStudio/" + name;
+    return fileExists(path) ? fileData(path) : ByteArray();
+}
+
 muse::ByteArray MscReader::readAutomationJsonFile() const
 {
     if (!fileExists(u"automation.json")) {

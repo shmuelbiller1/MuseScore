@@ -23,6 +23,7 @@
 #pragma once
 
 #include <memory>
+#include <QByteArray>
 
 #include "global/async/channel.h"
 #include "global/async/notification.h"
@@ -86,6 +87,12 @@ public:
 
     virtual notation::IMasterNotationPtr masterNotation() const = 0;
     virtual IProjectAudioSettingsPtr audioSettings() const = 0;
+
+    // Optional local-only Voice Studio data, kept inside the score copy.
+    // Defaults keep other project implementations source-compatible.
+    virtual QByteArray voiceStudioSession() const { return {}; }
+    virtual QByteArray voiceStudioSource() const { return {}; }
+    virtual bool setVoiceStudioData(const QByteArray&, const QByteArray&) { return false; }
 };
 
 using INotationProjectPtr = std::shared_ptr<INotationProject>;

@@ -332,6 +332,11 @@ target_link_libraries(notationscene_qml PRIVATE
     muse::workspace_qml # for the status bar
 )
 
+if (WIN32)
+    # WinMM ships with Windows: offline microphone capture and WAV audition.
+    target_link_libraries(notationscene_qml PRIVATE winmm)
+endif()
+
 if(MUE_BUILD_NOTATIONSCENE_TESTS)
     add_subdirectory(tests)
 endif()

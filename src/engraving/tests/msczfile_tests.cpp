@@ -88,3 +88,36 @@ TEST_F(Engraving_MsczFileTests, MsczFile_WriteRead)
         EXPECT_EQ(imageData, originImageData);
     }
 }
+
+TEST_F(Engraving_MsczFileTests, VoiceStudio_RoundTripStaysInScoreCopy)
+{
+    const ByteArray session("{\"version\":1,\"clips\":[]}");
+    const ByteArray source("RIFFrecording-bytes");
+    ByteArray copyData;
+    {
+        Buffer buf(&copyData);
+        MscWriter::Params params;
+        params.device = &buf;
+        params.filePath = "copy.mscz";
+        params.mode = MscIoMode::Zip;
+        MscWriter writer(params);
+        ASSERT_TRUE(writer.open());
+        writer.writeScoreFile(ByteArray("score"));
+        writer.writeVoiceStudioFile(u"session.json", session);
+        writer.writeVoiceStudioFile(u"source.wav", source);
+        writer.writeVoiceStudioFile(u"../not-audio", source);
+    }
+    {
+        Buffer buf(&copyData);
+        MscReader::Params params;
+        params.device = &buf;
+        params.filePath = "copy.mscz";
+        params.mode = MscIoMode::Zip;
+        MscReader reader(params);
+        ASSERT_TRUE(reader.open());
+        EXPECT_EQ(reader.readVoiceStudioFile(u"session.json"), session);
+        EXPECT_EQ(reader.readVoiceStudioFile(u"source.wav"), source);
+        EXPECT_TRUE(reader.readVoiceStudioFile(u"../not-audio").empty());
+        EXPECT_EQ(reader.readScoreFile(), ByteArray("score"));
+    }
+}

@@ -99,6 +99,14 @@ static const std::vector<CommandInfo> s_commandInfos = {
         Availability::Internal
         ),
     CommandInfo(
+        APP_CREATE_EDITABLE_SCORE_COPY_COMMAND,
+        TranslatableString("action", "Create editable score copy…"),
+        TranslatableString("action", "Open a new local copy for editing while keeping the original score unchanged"),
+        InputSchema(),
+        Decoration(),
+        Availability::Internal
+        ),
+    CommandInfo(
         APP_ASK_HELP_COMMAND,
         TranslatableString("action", "As&k for help"),
         TranslatableString("action", "Ask for help"),

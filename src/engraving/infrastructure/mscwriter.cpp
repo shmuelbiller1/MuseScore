@@ -198,6 +198,13 @@ void MscWriter::writeViewSettingsJsonFile(const ByteArray& data, const muse::io:
     addFileData(pathPrefix.toString() + u"viewsettings.json", data);
 }
 
+void MscWriter::writeVoiceStudioFile(const String& name, const ByteArray& data)
+{
+    if (name == u"session.json" || name == u"source.wav") {
+        addFileData(u"VoiceStudio/" + name, data);
+    }
+}
+
 void MscWriter::writeAutomationJsonFile(const muse::ByteArray& data)
 {
     addFileData(u"automation.json", data);
