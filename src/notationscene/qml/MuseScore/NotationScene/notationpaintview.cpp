@@ -146,6 +146,7 @@ void NotationPaintView::onUnloadNotation(INotationPtr notation)
     m_voiceStudioCopy = false;
     m_voiceWav.clear();
     m_voicePeaks.clear();
+    m_voiceSliceValid.clear();
     emit voiceStudioChanged();
 }
 
@@ -350,6 +351,7 @@ void NotationPaintView::refreshVoiceStudio(const QByteArray& sourceOverride)
         return;
     }
     m_voiceWav = nextWav;
+    m_voiceSliceValid.clear();
     m_voicePeaks.clear();
     m_voiceSamples.clear();
     m_voiceFrames = 0;
@@ -451,8 +453,11 @@ void NotationPaintView::paint(QPainter* painter)
     painter->save();
     AbstractNotationPaintView::paint(painter);
     painter->restore();
-    if (m_voiceStudioCopy && !m_voicePeaks.isEmpty()) {
-        paintVoiceWaveform(painter);
+    if (m_voiceStudioCopy) {
+        if (!m_voicePeaks.isEmpty()) {
+            paintVoiceWaveform(painter);
+        }
+        paintVoiceProblems(painter);
     }
 }
 
@@ -581,6 +586,145 @@ void NotationPaintView::paintVoiceWaveform(QPainter* painter)
                 const auto bottom = fromLogical(muse::PointF(x1, centerY + 13));
                 painter->drawLine(QPointF(top.x(), top.y()), QPointF(bottom.x(), bottom.y()));
                 painter->setPen(QPen(QColor(34, 130, 186, 180), 1));
+            }
+        }
+    }
+    painter->restore();
+}
+
+void NotationPaintView::paintVoiceProblems(QPainter* painter)
+{
+    if (!notation() || !notation()->elements()->msScore() || !studioProjectSession()->project()) {
+        return;
+    }
+    const auto* score = notation()->elements()->msScore();
+    const QVariantMap arrangement = voiceStudioArrangement();
+    const QVariantList included = arrangement.value("includedStaves").toList();
+    QSet<int> staves;
+    for (const QVariant& part : included) {
+        const int staff = part.toMap().value("staff").toInt();
+        if (staff >= 0 && staff < int(score->nstaves())) {
+            staves.insert(staff);
+        }
+    }
+    if (included.isEmpty() && score->nstaves()) {
+        staves.insert(0); // The default S part before an arrangement is saved.
+    }
+    if (staves.isEmpty()) {
+        return;
+    }
+    const int transpose = arrangement.value("transposeSemitones").toInt();
+    const QJsonArray clips = QJsonDocument::fromJson(studioProjectSession()->project()->voiceStudioSession())
+                             .object().value("clips").toArray();
+    const auto& passages = score->repeatList(true);
+    const auto& timeline = score->tempoTimeline(true);
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->setPen(QPen(QColor(205, 26, 45), 2));
+    painter->setBrush(QColor(230, 38, 48, 90));
+    for (const auto* page : notation()->elements()->pages()) {
+        for (const auto* system : page->systems()) {
+            const auto bounds = system->canvasBoundingRect();
+            const auto visible = fromLogical(muse::RectF(bounds.left(), bounds.top(), bounds.width(), bounds.height()));
+            if (!visible.toQRectF().intersects(QRectF(0, 0, width(), height()))) {
+                continue;
+            }
+            for (const auto* measureBase : system->measures()) {
+                if (!measureBase->isMeasure()) {
+                    continue;
+                }
+                const auto* measure = engraving::toMeasure(measureBase);
+                for (const auto* segment = measure->first(engraving::SegmentType::ChordRest);
+                     segment; segment = segment->next(engraving::SegmentType::ChordRest)) {
+                    for (int staff : staves) {
+                        for (int voiceIndex = 0; voiceIndex < 4; ++voiceIndex) {
+                            const auto* element = segment->element(staff * 4 + voiceIndex);
+                            if (!element || !element->isChord()) {
+                                continue;
+                            }
+                            const auto* chord = engraving::toChord(element);
+                            const int tick = chord->tick().ticks();
+                            for (size_t noteIndex = 0; noteIndex < chord->notes().size(); ++noteIndex) {
+                                const auto* note = chord->notes()[noteIndex];
+                                if (note->tieBack()) {
+                                    continue; // The first note owns the complete tied render.
+                                }
+                                bool played = false;
+                                bool problem = m_voiceSamples.empty() || clips.isEmpty();
+                                const QJsonObject clip = voice::clipForWrittenNote(clips, tick, int(note->track()), int(noteIndex));
+                                const int begin = int(qint64(clip.value("sourceStartMs").toInt()) * m_processingRate / 1000);
+                                const int end = int(qint64(clip.value("sourceEndMs").toInt()) * m_processingRate / 1000);
+                                const int offset = clip.value("scoreOffsetTicks").toInt();
+                                const double stretch = clip.value("stretch").toDouble(1);
+                                const int pitch = clip.value("outputPitch").toInt(note->pitch()) + transpose;
+                                const double frequency = 440.0 * std::pow(2.0, (pitch - 69) / 12.0);
+                                if (!problem) {
+                                    problem = begin < 0 || end > int(m_voiceSamples.size())
+                                              || end - begin < m_processingRate * 0.075 || offset < -9600 || offset > 9600
+                                              || stretch < 0.4 || stretch > 2.5 || pitch < 0 || pitch > 127
+                                              || frequency < 50 || frequency > 1400;
+                                }
+                                for (const engraving::RepeatSegment* passage : passages) {
+                                    if (tick < passage->tick || tick >= passage->endTick()) {
+                                        continue;
+                                    }
+                                    played = true;
+                                    const int playbackTick = passage->utick + tick - passage->tick;
+                                    int endTick = tick + chord->actualTicks().ticks();
+                                    const engraving::Note* tied = note;
+                                    int ties = 0;
+                                    for (; ties < 64 && tied->tieFor() && tied->tieFor()->endNote(); ++ties) {
+                                        tied = tied->tieFor()->endNote();
+                                        endTick = tied->chord()->tick().ticks() + tied->chord()->actualTicks().ticks();
+                                    }
+                                    if (voice::clipStartsBeforePlayback(playbackTick, offset) || endTick > passage->endTick()
+                                        || ties == 64) {
+                                        problem = true;
+                                        break;
+                                    }
+                                    const double start = timeline.utick2utime(playbackTick + offset);
+                                    const double length = (timeline.utick2utime(playbackTick + endTick - tick)
+                                                           - timeline.utick2utime(playbackTick)) * stretch;
+                                    if (!std::isfinite(start) || !std::isfinite(length) || start < 0 || length <= 0
+                                        || start + length > 240) {
+                                        problem = true;
+                                        break;
+                                    }
+                                }
+                                if (played && !problem) {
+                                    const auto key = std::make_pair(begin, end);
+                                    auto it = m_voiceSliceValid.find(key);
+                                    if (it == m_voiceSliceValid.end()) {
+                                        bool valid = true;
+                                        try {
+                                            // Validate the short voiced core, not a full
+                                            // multi-minute epoch scan on the paint thread.
+                                            const int attack = std::min(int(m_processingRate * 0.035), int((end - begin) * 0.14));
+                                            const int release = std::min(int(m_processingRate * 0.025), int((end - begin) * 0.10));
+                                            const int coreBegin = begin + attack;
+                                            const int coreEnd = end - release;
+                                            const double hz = voice::estimatePitch(m_voiceSamples, m_processingRate, coreBegin, coreEnd);
+                                            valid = hz >= 65 && hz <= 900 && coreEnd - coreBegin >= 5 * m_processingRate / hz;
+                                        } catch (const std::exception&) {
+                                            valid = false;
+                                        }
+                                        it = m_voiceSliceValid.emplace(key, valid).first;
+                                    }
+                                    problem = !it->second;
+                                }
+                                if (!played || !problem) {
+                                    continue;
+                                }
+                                const auto box = note->canvasBoundingRect();
+                                const QRectF viewBox
+                                    = fromLogical(muse::RectF(box.left(), box.top(), box.width(), box.height())).toQRectF();
+                                const QPointF center = viewBox.center();
+                                painter->drawEllipse(center, std::max(5.0, viewBox.width() / 2 + 2),
+                                                     std::max(5.0, viewBox.height() / 2 + 2));
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -848,6 +992,7 @@ QString NotationPaintView::exportVoiceStudioWav(const QUrl& destination, const Q
         return QStringLiteral("WAV exported, but arrangement settings could not be saved in the score copy.");
     }
     emit voiceStudioChanged();
+    scheduleRedraw();
     return {};
 }
 
@@ -1105,6 +1250,7 @@ QString NotationPaintView::saveVoiceStudioArrangement(const QVariantList& staves
         return QStringLiteral("Could not store the arrangement in the copied score.");
     }
     emit voiceStudioChanged();
+    scheduleRedraw();
     return {};
 }
 

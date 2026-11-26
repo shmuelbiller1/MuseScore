@@ -248,6 +248,15 @@ FocusScope {
             }
         }
 
+        Label {
+            visible: notationView.voiceStudioCopy
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            wrapMode: Text.WordWrap
+            text: qsTrc("notationscene", "Copy a run of written notes: click its first note or measure, Shift-click the last, press Ctrl+C, select the destination note/rest in another staff, and press Ctrl+V. You can edit the pasted part independently. Audio tags are not copied. A red notehead outline means this note cannot currently be rendered; check the recording, clip, pitch, and saved arrangement.")
+        }
+
         Connections {
             target: notationView
             function onVoiceStudioChanged() {

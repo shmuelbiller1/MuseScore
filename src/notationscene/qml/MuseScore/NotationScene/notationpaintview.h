@@ -29,6 +29,8 @@
 #include <QVariantMap>
 #include <vector>
 #include <memory>
+#include <map>
+#include <utility>
 
 #include "abstractnotationpaintview.h"
 #include "project/inotationproject_fwd.h"
@@ -78,6 +80,7 @@ private:
 
     void paint(QPainter* painter) override;
     void paintVoiceWaveform(QPainter* painter);
+    void paintVoiceProblems(QPainter* painter);
     void refreshVoiceStudio(const QByteArray& sourceOverride = {});
     std::vector<float> selectedVoiceSamples(bool processed, int transpose, QString& error) const;
     void closeVoicePlayback();
@@ -98,6 +101,7 @@ private:
     int m_voiceSampleRate = 0;
     int m_processingRate = 0;
     std::vector<float> m_voiceSamples;
+    std::map<std::pair<int, int>, bool> m_voiceSliceValid;
     bool m_voiceStudioCopy = false;
     project::INotationProjectPtr m_voiceStudioProject;
     struct NativeVoiceIO;
