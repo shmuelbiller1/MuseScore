@@ -204,6 +204,12 @@ protected:
     // Draw
     void paint(QPainter* painter) override;
 
+    // Derived views may opt into a dedicated input mode while forwarding
+    // ordinary mouse events to the standard notation controller.
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+
     virtual void onNotationSetup();
 
     virtual void onLoadNotation(INotationPtr notation);
@@ -236,10 +242,7 @@ private:
 
     // Input
     void wheelEvent(QWheelEvent* event) override;
-    void mousePressEvent(QMouseEvent* event) override;
-    void mouseMoveEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
-    void mouseReleaseEvent(QMouseEvent* event) override;
     void hoverMoveEvent(QHoverEvent* event) override;
     void hoverLeaveEvent(QHoverEvent* event) override;
     bool event(QEvent* event) override;

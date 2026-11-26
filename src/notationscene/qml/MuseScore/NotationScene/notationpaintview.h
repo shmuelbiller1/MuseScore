@@ -46,6 +46,7 @@ class NotationPaintView : public AbstractNotationPaintView
     Q_PROPERTY(int voiceStudioAudioLengthMs READ voiceStudioAudioLengthMs NOTIFY voiceStudioChanged)
     Q_PROPERTY(int voiceStudioStaffCount READ voiceStudioStaffCount NOTIFY voiceStudioChanged)
     Q_PROPERTY(bool voiceRecording READ voiceRecording NOTIFY voiceRecordingChanged)
+    Q_PROPERTY(bool voiceRangeDragMode READ voiceRangeDragMode NOTIFY voiceRangeDragModeChanged)
 
 public:
     explicit NotationPaintView(QQuickItem* parent = nullptr);
@@ -59,6 +60,10 @@ public:
     Q_INVOKABLE QVariantMap voiceStudioSelectedMeasure(bool useEnd) const;
     Q_INVOKABLE QString selectVoiceStudioRange(int staffNumber, int firstMeasure, int lastMeasure);
     Q_INVOKABLE QString copyVoiceStudioRange();
+    Q_INVOKABLE QString markVoiceNoteRangeStart();
+    Q_INVOKABLE QString selectVoiceNoteThroughSelection();
+    Q_INVOKABLE void setVoiceRangeDragMode(bool enabled);
+    bool voiceRangeDragMode() const;
     bool voiceRecording() const;
     Q_INVOKABLE QString startVoiceRecording();
     Q_INVOKABLE QString stopVoiceRecording();
@@ -78,6 +83,7 @@ signals:
     void voiceStudioChanged();
     void voiceStudioSelectionChanged();
     void voiceRecordingChanged();
+    void voiceRangeDragModeChanged();
 
 private:
     muse::ContextInject<project::IProjectSession> studioProjectSession = { this };
@@ -85,6 +91,13 @@ private:
     void paint(QPainter* painter) override;
     void paintVoiceWaveform(QPainter* painter);
     void paintVoiceProblems(QPainter* painter);
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseUngrabEvent() override;
+    bool voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, int& tick, int& staff) const;
+    QString selectVoiceNoteSpan(int firstTick, int lastTick, int staff, bool requireCopyable = true);
+    void updateVoiceRangeDrag();
     void refreshVoiceStudio(const QByteArray& sourceOverride = {});
     std::vector<float> selectedVoiceSamples(bool processed, int transpose, QString& error) const;
     void closeVoicePlayback();
@@ -107,6 +120,14 @@ private:
     std::vector<float> m_voiceSamples;
     std::map<std::pair<int, int>, bool> m_voiceSliceValid;
     bool m_voiceStudioCopy = false;
+    bool m_voiceRangeDragMode = false;
+    bool m_voiceRangeDragging = false;
+    int m_voiceStartTick = -1;
+    int m_voiceStartStaff = -1;
+    int m_voiceLastTick = -1;
+    QPointF m_voiceDragPosition;
+    QPointF m_voiceDragOrigin;
+    QTimer m_voiceRangeScrollTimer;
     project::INotationProjectPtr m_voiceStudioProject;
     struct NativeVoiceIO;
     std::unique_ptr<NativeVoiceIO> m_voiceIO;
