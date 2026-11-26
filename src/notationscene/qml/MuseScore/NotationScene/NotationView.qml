@@ -254,7 +254,7 @@ FocusScope {
             Layout.leftMargin: 12
             Layout.rightMargin: 12
             wrapMode: Text.WordWrap
-            text: qsTrc("notationscene", "Select a whole run across systems or pages below, then Ctrl+C, click the destination note/rest in another staff, and Ctrl+V. The pasted notes can be edited independently; audio tags stay with the original staff. A red outline marks a note that cannot currently render.")
+            text: qsTrc("notationscene", "Select exact notes with the buttons below or switch on drag-select, press on a note/rest, drag toward the last note (hold at an edge to scroll across pages), and release. Copy the selection, click the destination note/rest, then Ctrl+V. The copied notation can be edited separately; audio tags are not copied. A red outline marks a note that cannot render.")
         }
 
         ScrollView {
@@ -310,6 +310,34 @@ FocusScope {
                 }
                 Button {
                     text: qsTrc("notationscene", "Copy selected range")
+                    onClicked: voiceStudioError.text = notationView.copyVoiceStudioRange()
+                }
+            }
+        }
+
+        ScrollView {
+            visible: notationView.voiceStudioCopy
+            Layout.fillWidth: true
+            Layout.preferredHeight: 55
+            RowLayout {
+                spacing: 8
+                Label { text: qsTrc("notationscene", "Exact note range (one staff):") }
+                Button {
+                    text: qsTrc("notationscene", "Mark clicked start")
+                    onClicked: voiceStudioError.text = notationView.markVoiceNoteRangeStart()
+                }
+                Button {
+                    text: qsTrc("notationscene", "Select through clicked end")
+                    onClicked: voiceStudioError.text = notationView.selectVoiceNoteThroughSelection()
+                }
+                Button {
+                    text: notationView.voiceRangeDragMode
+                          ? qsTrc("notationscene", "Cancel drag selection")
+                          : qsTrc("notationscene", "Drag-select notes")
+                    onClicked: notationView.setVoiceRangeDragMode(!notationView.voiceRangeDragMode)
+                }
+                Button {
+                    text: qsTrc("notationscene", "Copy exact range")
                     onClicked: voiceStudioError.text = notationView.copyVoiceStudioRange()
                 }
             }

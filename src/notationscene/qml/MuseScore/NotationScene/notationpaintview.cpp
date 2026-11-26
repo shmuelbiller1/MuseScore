@@ -47,6 +47,7 @@
 #include <QSet>
 #include <QHash>
 #include <QDateTime>
+#include <QMouseEvent>
 #include <QTimer>
 
 #ifdef Q_OS_WIN
@@ -68,6 +69,7 @@
 #include <utility>
 #include <vector>
 #include <map>
+#include <limits>
 
 using namespace mu;
 using namespace muse::draw;
@@ -90,6 +92,18 @@ struct NotationPaintView::NativeVoiceIO
 NotationPaintView::NotationPaintView(QQuickItem* parent)
     : AbstractNotationPaintView(parent), m_voiceIO(std::make_unique<NativeVoiceIO>())
 {
+    m_voiceRangeScrollTimer.setInterval(45);
+    connect(&m_voiceRangeScrollTimer, &QTimer::timeout, this, [this]() {
+        if (!m_voiceRangeDragging || (m_voiceDragPosition - m_voiceDragOrigin).manhattanLength() < 8) {
+            return;
+        }
+        const qreal edge = 36;
+        const qreal dx = m_voiceDragPosition.x() < edge ? 14 : m_voiceDragPosition.x() > width() - edge ? -14 : 0;
+        const qreal dy = m_voiceDragPosition.y() < edge ? 14 : m_voiceDragPosition.y() > height() - edge ? -14 : 0;
+        if ((dx || dy) && moveCanvas(dx, dy)) {
+            updateVoiceRangeDrag();
+        }
+    });
 #ifdef Q_OS_WIN
     m_voiceIO->timer.setInterval(200);
     connect(&m_voiceIO->timer, &QTimer::timeout, this, [this]() {
@@ -134,6 +148,9 @@ void NotationPaintView::onLoadNotation(INotationPtr notation)
 
 void NotationPaintView::onUnloadNotation(INotationPtr notation)
 {
+    setVoiceRangeDragMode(false);
+    m_voiceStartTick = -1;
+    m_voiceStartStaff = -1;
     discardVoiceRecording();
     closeVoicePlayback();
     AbstractNotationPaintView::onUnloadNotation(notation);
@@ -295,6 +312,220 @@ QString NotationPaintView::copyVoiceStudioRange()
     }
     interaction->copySelection(); // Native MuseScore notation clipboard; no audio tags.
     return {};
+}
+
+static engraving::ChordRest* selectedVoiceChordRest(const INotationSelectionPtr& selection)
+{
+    if (selection->isRange()) {
+        return nullptr;
+    }
+    const auto notes = selection->notes();
+    if (notes.size() == 1 && notes.front()->chord()) {
+        return notes.front()->chord();
+    }
+    auto* element = selection->element();
+    return element && element->isChordRest() ? engraving::toChordRest(element) : nullptr;
+}
+
+static engraving::ChordRest* voiceChordRestAt(engraving::Score* score, int tick, int staff)
+{
+    auto* segment = score->tick2segment(engraving::Fraction::fromTicks(tick), true,
+                                        engraving::SegmentType::ChordRest, false);
+    if (!segment || segment->tick().ticks() != tick) {
+        return nullptr;
+    }
+    for (int v = 0; v < 4; ++v) {
+        auto* element = segment->element(staff * 4 + v);
+        if (element && element->isChordRest()) {
+            return engraving::toChordRest(element);
+        }
+    }
+    return nullptr;
+}
+
+QString NotationPaintView::selectVoiceNoteSpan(int firstTick, int lastTick, int staff, bool requireCopyable)
+{
+    if (!m_voiceStudioCopy || !notation() || !notation()->elements()->msScore()
+        || staff < 0 || staff >= voiceStudioStaffCount()) {
+        return QStringLiteral("Open a Voice Studio copy and select notes on one written staff.");
+    }
+    auto* score = notation()->elements()->msScore();
+    auto* first = voiceChordRestAt(score, std::min(firstTick, lastTick), staff);
+    auto* last = voiceChordRestAt(score, std::max(firstTick, lastTick), staff);
+    if (!first || !last) {
+        return QStringLiteral("A selected note or rest is no longer present in this score.");
+    }
+    auto interaction = notation()->interaction();
+    interaction->clearSelection();
+    if (!interaction->select({ first }, SelectType::RANGE, staff)
+        || (first != last && !interaction->select({ last }, SelectType::RANGE, staff))
+        || !interaction->selection()->isRange() || (requireCopyable && !interaction->selection()->canCopy())) {
+        interaction->clearSelection();
+        return QStringLiteral("This exact range cannot be copied; include complete tuplets or tremolos.");
+    }
+    scheduleRedraw();
+    return {};
+}
+
+QString NotationPaintView::markVoiceNoteRangeStart()
+{
+    if (!m_voiceStudioCopy || !notation()) {
+        return QStringLiteral("Open an editable Voice Studio score copy first.");
+    }
+    auto* note = selectedVoiceChordRest(notation()->interaction()->selection());
+    if (!note) {
+        return QStringLiteral("Click exactly one starting note or rest on the source staff first.");
+    }
+    m_voiceStartTick = note->tick().ticks();
+    m_voiceStartStaff = int(note->staffIdx());
+    return {};
+}
+
+QString NotationPaintView::selectVoiceNoteThroughSelection()
+{
+    if (!m_voiceStudioCopy || !notation() || m_voiceStartTick < 0) {
+        return QStringLiteral("Mark the starting note or rest first.");
+    }
+    auto* note = selectedVoiceChordRest(notation()->interaction()->selection());
+    if (!note || int(note->staffIdx()) != m_voiceStartStaff) {
+        return QStringLiteral("Click an ending note or rest on the same source staff.");
+    }
+    return selectVoiceNoteSpan(m_voiceStartTick, note->tick().ticks(), m_voiceStartStaff);
+}
+
+bool NotationPaintView::voiceRangeDragMode() const
+{
+    return m_voiceRangeDragMode;
+}
+
+void NotationPaintView::setVoiceRangeDragMode(bool enabled)
+{
+    enabled = enabled && m_voiceStudioCopy && notation();
+    if (m_voiceRangeDragMode == enabled) {
+        return;
+    }
+    m_voiceRangeDragMode = enabled;
+    m_voiceRangeDragging = false;
+    m_voiceLastTick = -1;
+    m_voiceRangeScrollTimer.stop();
+    setCursor(enabled ? Qt::CrossCursor : Qt::ArrowCursor);
+    emit voiceRangeDragModeChanged();
+}
+
+bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, int& tick, int& staff) const
+{
+    if (!notation() || !notation()->elements()->msScore()) {
+        return false;
+    }
+    if (!nearest) {
+        const auto hits = notation()->interaction()->hitElements(toLogical(pos), float(7 / currentScaling()));
+        for (auto it = hits.rbegin(); it != hits.rend(); ++it) {
+            auto* item = *it;
+            if (item->isNote()) {
+                item = engraving::toNote(item)->chord();
+            }
+            if (item->isChordRest() && (staffOnly < 0 || int(item->staffIdx()) == staffOnly)) {
+                tick = item->tick().ticks();
+                staff = int(item->staffIdx());
+                return true;
+            }
+        }
+        return false;
+    }
+    double bestDistance = std::numeric_limits<double>::max();
+    const QRectF viewport(-48, -48, width() + 96, height() + 96);
+    for (const auto* page : notation()->elements()->pages()) {
+        for (const auto* system : page->systems()) {
+            if (!fromLogical(system->canvasBoundingRect()).toQRectF().intersects(viewport)) {
+                continue;
+            }
+            for (const auto* base : system->measures()) {
+                if (!base->isMeasure()) {
+                    continue;
+                }
+                const auto* measure = engraving::toMeasure(base);
+                for (const auto* segment = measure->first(engraving::SegmentType::ChordRest);
+                     segment; segment = segment->next(engraving::SegmentType::ChordRest)) {
+                    for (int v = 0; v < 4; ++v) {
+                        const auto* item = segment->element(staffOnly * 4 + v);
+                        if (!item || !item->isChordRest()) {
+                            continue;
+                        }
+                        const QPointF center = fromLogical(item->canvasBoundingRect()).toQRectF().center();
+                        const double distance = std::pow(center.x() - pos.x(), 2) + std::pow(center.y() - pos.y(), 2);
+                        if (distance < bestDistance) {
+                            bestDistance = distance;
+                            tick = item->tick().ticks();
+                            staff = staffOnly;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return bestDistance < std::numeric_limits<double>::max();
+}
+
+void NotationPaintView::updateVoiceRangeDrag()
+{
+    if (!m_voiceRangeDragging || m_voiceStartStaff < 0) {
+        return;
+    }
+    int tick = -1, staff = -1;
+    if (voiceNoteAt(m_voiceDragPosition, true, m_voiceStartStaff, tick, staff) && tick != m_voiceLastTick) {
+        if (selectVoiceNoteSpan(m_voiceStartTick, tick, staff, false).isEmpty()) {
+            m_voiceLastTick = tick;
+        }
+    }
+}
+
+void NotationPaintView::mousePressEvent(QMouseEvent* event)
+{
+    if (!m_voiceRangeDragMode || event->button() != Qt::LeftButton) {
+        AbstractNotationPaintView::mousePressEvent(event);
+        return;
+    }
+    forceFocusIn();
+    int tick = -1, staff = -1;
+    if (voiceNoteAt(event->position(), false, -1, tick, staff)) {
+        m_voiceStartTick = tick;
+        m_voiceStartStaff = staff;
+        m_voiceLastTick = tick;
+        m_voiceDragPosition = event->position();
+        m_voiceDragOrigin = event->position();
+        m_voiceRangeDragging = selectVoiceNoteSpan(tick, tick, staff, false).isEmpty();
+        if (m_voiceRangeDragging) {
+            m_voiceRangeScrollTimer.start();
+        }
+    }
+    event->accept(); // Never drag a note or the canvas in explicit range mode.
+}
+
+void NotationPaintView::mouseMoveEvent(QMouseEvent* event)
+{
+    if (!m_voiceRangeDragMode) {
+        AbstractNotationPaintView::mouseMoveEvent(event);
+        return;
+    }
+    if (m_voiceRangeDragging) {
+        m_voiceDragPosition = event->position();
+        updateVoiceRangeDrag();
+    }
+    event->accept();
+}
+
+void NotationPaintView::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (!m_voiceRangeDragMode || event->button() != Qt::LeftButton) {
+        AbstractNotationPaintView::mouseReleaseEvent(event);
+        return;
+    }
+    if (m_voiceRangeDragging) {
+        m_voiceDragPosition = event->position();
+        updateVoiceRangeDrag();
+        setVoiceRangeDragMode(false); // Restore ordinary notation editing after one gesture.
+    }
+    event->accept();
 }
 
 QVariantMap NotationPaintView::selectedVoiceClip() const
