@@ -75,6 +75,8 @@ qt_add_qml_module(notationscene_qml
         notationpaintview.cpp
         notationpaintview.h
         voicestudiorange.h
+        voicestudiodynamics.h
+        voicestudiomp3.h
         notationruler.cpp
         notationruler.h
         notationstatusbarmodel.cpp
@@ -332,6 +334,13 @@ target_link_libraries(notationscene_qml PRIVATE
     muse::uicomponents_qml
     muse::workspace_qml # for the status bar
 )
+
+# Use the same LAME dependency as MuseScore's existing MP3 audio exporter.
+# A build without the encoder retains WAV export without offering a broken MP3 action.
+if(TARGET libmp3lame::libmp3lame)
+    target_link_libraries(notationscene_qml PRIVATE libmp3lame::libmp3lame)
+    target_compile_definitions(notationscene_qml PRIVATE MUE_VOICE_STUDIO_MP3)
+endif()
 
 if (WIN32)
     # WinMM ships with Windows: offline microphone capture and WAV audition.

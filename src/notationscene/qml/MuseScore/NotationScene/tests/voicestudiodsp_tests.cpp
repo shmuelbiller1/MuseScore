@@ -18,6 +18,7 @@
 
 #include "../voicestudiodsp.h"
 #include "../voicestudioclip.h"
+#include "../voicestudiomp3.h"
 
 using namespace mu::notation::voice;
 
@@ -99,3 +100,20 @@ TEST(VoiceStudioDsp, RejectsSilenceAndInvalidRanges)
     EXPECT_THROW(synthesize(silent, 16000, 0, 6000, 196, 0), std::runtime_error);
     EXPECT_THROW(synthesize(silent, 16000, 0, 6000, 2000, 16000), std::runtime_error);
 }
+
+#ifdef MUE_VOICE_STUDIO_MP3
+TEST(VoiceStudioDsp, EncodesProcessedMixAsRealMp3)
+{
+    const int rate = 16000;
+    std::vector<float> source(rate);
+    for (int i = 0; i < rate; ++i) {
+        source[i] = float(0.25 * std::sin(2 * 3.141592653589793 * 220 * i / rate));
+    }
+    const QByteArray mp3 = encodeProcessedMp3(source, rate);
+    ASSERT_GT(mp3.size(), 1000);
+    const bool hasId3 = mp3.startsWith("ID3");
+    const bool hasFrameSync = uchar(mp3.at(0)) == 0xff && (uchar(mp3.at(1)) & 0xe0) == 0xe0;
+    EXPECT_TRUE(hasId3 || hasFrameSync);
+    EXPECT_TRUE(encodeProcessedMp3({}, rate).isEmpty());
+}
+#endif

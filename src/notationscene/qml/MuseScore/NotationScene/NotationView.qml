@@ -207,10 +207,16 @@ FocusScope {
                 Label { text: qsTrc("notationscene", "Arrangement semitones") }
                 SpinBox { id: arrangementShift; from: -24; to: 24; editable: true }
                 Label { text: qsTrc("notationscene", "A minor → G minor: −2") }
+                CheckBox {
+                    id: followWrittenDynamics
+                    text: qsTrc("notationscene", "Follow written p / mf / f in choir export")
+                    ToolTip.text: qsTrc("notationscene", "Optional: each staff's written dynamic applies from its note until the next dynamic; mf returns to the reference level. Crescendo hairpins are not included.")
+                    ToolTip.visible: hovered
+                }
                 Button {
                     text: qsTrc("notationscene", "Save arrangement")
                     onClicked: voiceStudioError.text = notationView.saveVoiceStudioArrangement(
-                               root.includedVoiceStaves(), arrangementShift.value)
+                               root.includedVoiceStaves(), arrangementShift.value, followWrittenDynamics.checked)
                 }
                 Button {
                     text: qsTrc("notationscene", "Written/output note progression")
@@ -223,7 +229,13 @@ FocusScope {
                 Button {
                     text: qsTrc("notationscene", "Export processed WAV…")
                     enabled: notationView.voiceStudioHasAudio
-                    onClicked: voiceExportDialog.open()
+                    onClicked: { voiceExportDialog.mp3 = false; voiceExportDialog.open() }
+                }
+                Button {
+                    text: qsTrc("notationscene", "Export processed MP3…")
+                    visible: notationView.voiceStudioMp3Available
+                    enabled: notationView.voiceStudioHasAudio
+                    onClicked: { voiceExportDialog.mp3 = true; voiceExportDialog.open() }
                 }
                 Button {
                     text: qsTrc("notationscene", "Hear raw")
@@ -254,7 +266,7 @@ FocusScope {
             Layout.leftMargin: 12
             Layout.rightMargin: 12
             wrapMode: Text.WordWrap
-            text: qsTrc("notationscene", "Select exact notes with the buttons below or switch on drag-select, press on a note/rest, drag toward the last note (hold at an edge to scroll across pages), and release. Copy the selection, click the destination note/rest, then Ctrl+V. The copied notation can be edited separately; audio tags are not copied. A red outline marks a note that cannot render.")
+            text: qsTrc("notationscene", "Select exact notes with the buttons below or switch on drag-select, press on a note/rest, drag toward the last note (hold at an edge to scroll across pages), and release. Copy the selection, click the destination note/rest, then Ctrl+V. The copied notation can be edited separately; audio tags are not copied. A red outline marks a note that cannot render. To change choir loudness, select a note and apply p, mf or f from Palettes → Dynamics; add mf later to return to the reference level, then enable Follow written dynamics before export.")
         }
 
         ScrollView {
@@ -360,6 +372,7 @@ FocusScope {
                 if (t) tenorStaff.value = t.staff + 1
                 if (b) bassStaff.value = b.staff + 1
                 arrangementShift.value = saved.transposeSemitones ?? 0
+                followWrittenDynamics.checked = saved.followDynamics === true
             }
             function onVoiceStudioSelectionChanged() {
                 root.selectedVoiceClip = notationView.selectedVoiceClip()
@@ -389,11 +402,14 @@ FocusScope {
 
         FileDialog {
             id: voiceExportDialog
+            property bool mp3: false
             fileMode: FileDialog.SaveFile
-            title: qsTrc("notationscene", "Export processed choir WAV")
-            nameFilters: ["WAV audio (*.wav)"]
-            onAccepted: voiceStudioError.text = notationView.exportVoiceStudioWav(
-                            selectedFile, root.includedVoiceStaves(), arrangementShift.value)
+            title: mp3 ? qsTrc("notationscene", "Export processed choir MP3")
+                       : qsTrc("notationscene", "Export processed choir WAV")
+            nameFilters: mp3 ? ["MP3 audio (*.mp3)"] : ["WAV audio (*.wav)"]
+            onAccepted: voiceStudioError.text = notationView.exportVoiceStudioAudio(
+                            selectedFile, root.includedVoiceStaves(), arrangementShift.value,
+                            followWrittenDynamics.checked, mp3)
         }
         FileDialog {
             id: voicePreviewDialog

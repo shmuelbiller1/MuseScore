@@ -44,6 +44,7 @@ class NotationPaintView : public AbstractNotationPaintView
     Q_PROPERTY(bool voiceStudioCopy READ voiceStudioCopy NOTIFY voiceStudioChanged)
     Q_PROPERTY(QString voiceStudioCopyPath READ voiceStudioCopyPath NOTIFY voiceStudioChanged)
     Q_PROPERTY(bool voiceStudioHasAudio READ voiceStudioHasAudio NOTIFY voiceStudioChanged)
+    Q_PROPERTY(bool voiceStudioMp3Available READ voiceStudioMp3Available CONSTANT)
     Q_PROPERTY(int voiceStudioAudioLengthMs READ voiceStudioAudioLengthMs NOTIFY voiceStudioChanged)
     Q_PROPERTY(int voiceStudioStaffCount READ voiceStudioStaffCount NOTIFY voiceStudioChanged)
     Q_PROPERTY(bool voiceRecording READ voiceRecording NOTIFY voiceRecordingChanged)
@@ -55,6 +56,7 @@ public:
     bool voiceStudioCopy() const;
     QString voiceStudioCopyPath() const;
     bool voiceStudioHasAudio() const;
+    bool voiceStudioMp3Available() const;
     int voiceStudioAudioLengthMs() const;
     int voiceStudioStaffCount() const;
     Q_INVOKABLE int voiceStudioMeasureCount() const;
@@ -74,11 +76,12 @@ public:
     Q_INVOKABLE QString removeSelectedVoiceTag();
     Q_INVOKABLE QVariantMap selectedVoiceClip() const;
     Q_INVOKABLE QString updateSelectedVoiceClip(int offsetTicks, int stretchPercent, int outputPitch);
-    Q_INVOKABLE QString exportVoiceStudioWav(const QUrl& destination, const QVariantList& staves, int transpose);
+    Q_INVOKABLE QString exportVoiceStudioAudio(const QUrl& destination, const QVariantList& staves, int transpose, bool followDynamics,
+                                               bool mp3);
     Q_INVOKABLE QString exportSelectedVoicePreview(const QUrl& destination, bool processed, int transpose);
     Q_INVOKABLE QString voiceStudioNoteProgression(const QVariantList& staves, int transpose) const;
     Q_INVOKABLE QVariantMap voiceStudioArrangement() const;
-    Q_INVOKABLE QString saveVoiceStudioArrangement(const QVariantList& staves, int transpose);
+    Q_INVOKABLE QString saveVoiceStudioArrangement(const QVariantList& staves, int transpose, bool followDynamics);
 
 signals:
     void voiceStudioChanged();
