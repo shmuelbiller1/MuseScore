@@ -40,6 +40,8 @@
 #include "engraving/dom/tempotimeline.h"
 #include "voicestudioclip.h"
 #include "voicestudiodsp.h"
+#include "voicestudiodynamics.h"
+#include "voicestudiomp3.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -150,7 +152,7 @@ void NotationPaintView::onLoadNotation(INotationPtr notation)
 void NotationPaintView::onUnloadNotation(INotationPtr notation)
 {
     setVoiceRangeDragMode(false);
-    m_voiceStartTick = -1;
+    m_voiceStartEndpoint = {};
     m_voiceStartStaff = -1;
     discardVoiceRecording();
     closeVoicePlayback();
@@ -203,6 +205,15 @@ QString NotationPaintView::voiceStudioCopyPath() const
 bool NotationPaintView::voiceStudioHasAudio() const
 {
     return !m_voicePeaks.isEmpty();
+}
+
+bool NotationPaintView::voiceStudioMp3Available() const
+{
+#ifdef MUE_VOICE_STUDIO_MP3
+    return true;
+#else
+    return false;
+#endif
 }
 
 int NotationPaintView::voiceStudioAudioLengthMs() const
@@ -328,34 +339,23 @@ static engraving::ChordRest* selectedVoiceChordRest(const INotationSelectionPtr&
     return element && element->isChordRest() ? engraving::toChordRest(element) : nullptr;
 }
 
-static engraving::ChordRest* voiceChordRestAt(engraving::Score* score, int tick, int staff)
-{
-    auto* segment = score->tick2segment(engraving::Fraction::fromTicks(tick), true,
-                                        engraving::SegmentType::ChordRest, false);
-    if (!segment || segment->tick().ticks() != tick) {
-        return nullptr;
-    }
-    for (int v = 0; v < 4; ++v) {
-        auto* element = segment->element(staff * 4 + v);
-        if (element && element->isChordRest()) {
-            return engraving::toChordRest(element);
-        }
-    }
-    return nullptr;
-}
-
-QString NotationPaintView::selectVoiceNoteSpan(int firstTick, int lastTick, int staff, bool requireCopyable)
+QString NotationPaintView::selectVoiceNoteSpan(voice_range::Endpoint start, voice_range::Endpoint end, bool requireCopyable)
 {
     if (!m_voiceStudioCopy || !notation() || !notation()->elements()->msScore()
-        || staff < 0 || staff >= voiceStudioStaffCount()) {
+        || start.track < 0 || end.track < 0 || start.track / 4 != end.track / 4
+        || start.track / 4 >= voiceStudioStaffCount()) {
         return QStringLiteral("Open a Voice Studio copy and select notes on one written staff.");
     }
     auto* score = notation()->elements()->msScore();
-    auto* first = voiceChordRestAt(score, std::min(firstTick, lastTick), staff);
-    auto* last = voiceChordRestAt(score, std::max(firstTick, lastTick), staff);
+    if (end.tick < start.tick) {
+        std::swap(start, end);
+    }
+    auto* first = voice_range::chordRestAt(score, start);
+    auto* last = voice_range::chordRestAt(score, end);
     if (!first || !last) {
         return QStringLiteral("A selected note or rest is no longer present in this score.");
     }
+    const int staff = start.track / 4;
     auto interaction = notation()->interaction();
     interaction->clearSelection();
     if (!interaction->select({ first }, SelectType::RANGE, staff)
@@ -377,21 +377,21 @@ QString NotationPaintView::markVoiceNoteRangeStart()
     if (!note) {
         return QStringLiteral("Click exactly one starting note or rest on the source staff first.");
     }
-    m_voiceStartTick = note->tick().ticks();
+    m_voiceStartEndpoint = { note->tick().ticks(), int(note->track()) };
     m_voiceStartStaff = int(note->staffIdx());
     return {};
 }
 
 QString NotationPaintView::selectVoiceNoteThroughSelection()
 {
-    if (!m_voiceStudioCopy || !notation() || m_voiceStartTick < 0) {
+    if (!m_voiceStudioCopy || !notation() || m_voiceStartEndpoint.tick < 0) {
         return QStringLiteral("Mark the starting note or rest first.");
     }
     auto* note = selectedVoiceChordRest(notation()->interaction()->selection());
     if (!note || int(note->staffIdx()) != m_voiceStartStaff) {
         return QStringLiteral("Click an ending note or rest on the same source staff.");
     }
-    return selectVoiceNoteSpan(m_voiceStartTick, note->tick().ticks(), m_voiceStartStaff);
+    return selectVoiceNoteSpan(m_voiceStartEndpoint, { note->tick().ticks(), int(note->track()) });
 }
 
 bool NotationPaintView::voiceRangeDragMode() const
@@ -407,15 +407,16 @@ void NotationPaintView::setVoiceRangeDragMode(bool enabled)
     }
     m_voiceRangeDragMode = enabled;
     m_voiceRangeDragging = false;
-    m_voiceLastTick = -1;
+    m_voiceLastEndpoint = {};
     m_voiceRangeScrollTimer.stop();
     setCursor(enabled ? QCursor(Qt::CrossCursor) : QCursor());
     emit voiceRangeDragModeChanged();
 }
 
-bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, int& tick, int& staff) const
+bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, voice_range::Endpoint& endpoint) const
 {
-    if (!notation() || !notation()->elements()->msScore()) {
+    if (!notation() || !notation()->elements()->msScore()
+        || (nearest && (staffOnly < 0 || staffOnly >= voiceStudioStaffCount()))) {
         return false;
     }
     if (!nearest) {
@@ -426,8 +427,7 @@ bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffO
                 item = engraving::toNote(item)->chord();
             }
             if (item->isChordRest() && (staffOnly < 0 || int(item->staffIdx()) == staffOnly)) {
-                tick = item->tick().ticks();
-                staff = int(item->staffIdx());
+                endpoint = { item->tick().ticks(), int(item->track()) };
                 return true;
             }
         }
@@ -458,8 +458,7 @@ bool NotationPaintView::voiceNoteAt(const QPointF& pos, bool nearest, int staffO
                         const double distance = dx * dx + dy * dy;
                         if (distance < bestDistance) {
                             bestDistance = distance;
-                            tick = item->tick().ticks();
-                            staff = staffOnly;
+                            endpoint = { item->tick().ticks(), int(item->track()) };
                         }
                     }
                 }
@@ -474,10 +473,11 @@ void NotationPaintView::updateVoiceRangeDrag()
     if (!m_voiceRangeDragging || m_voiceStartStaff < 0) {
         return;
     }
-    int tick = -1, staff = -1;
-    if (voiceNoteAt(m_voiceDragPosition, true, m_voiceStartStaff, tick, staff) && tick != m_voiceLastTick) {
-        if (selectVoiceNoteSpan(m_voiceStartTick, tick, staff, false).isEmpty()) {
-            m_voiceLastTick = tick;
+    voice_range::Endpoint end;
+    if (voiceNoteAt(m_voiceDragPosition, true, m_voiceStartStaff, end)
+        && (end.tick != m_voiceLastEndpoint.tick || end.track != m_voiceLastEndpoint.track)) {
+        if (selectVoiceNoteSpan(m_voiceStartEndpoint, end, false).isEmpty()) {
+            m_voiceLastEndpoint = end;
         }
     }
 }
@@ -489,14 +489,14 @@ void NotationPaintView::mousePressEvent(QMouseEvent* event)
         return;
     }
     forceFocusIn();
-    int tick = -1, staff = -1;
-    if (voiceNoteAt(event->position(), false, -1, tick, staff)) {
-        m_voiceStartTick = tick;
-        m_voiceStartStaff = staff;
-        m_voiceLastTick = tick;
+    voice_range::Endpoint start;
+    if (voiceNoteAt(event->position(), false, -1, start)) {
+        m_voiceStartEndpoint = start;
+        m_voiceStartStaff = start.track / 4;
+        m_voiceLastEndpoint = start;
         m_voiceDragPosition = event->position();
         m_voiceDragOrigin = event->position();
-        m_voiceRangeDragging = selectVoiceNoteSpan(tick, tick, staff, false).isEmpty();
+        m_voiceRangeDragging = selectVoiceNoteSpan(start, start, false).isEmpty();
         if (m_voiceRangeDragging) {
             m_voiceRangeScrollTimer.start();
         }
@@ -1105,23 +1105,36 @@ static QByteArray makeVoiceWav(const std::vector<float>& samples, int rate)
 }
 
 static QString writeVoiceExport(const QUrl& destination, const std::vector<float>& samples, int rate,
-                                const muse::io::path_t& scorePath)
+                                const muse::io::path_t& scorePath, bool mp3Requested = false)
 {
     if (!destination.isLocalFile() || samples.empty() || rate < 8000 || samples.size() > size_t(rate) * 240) {
-        return QStringLiteral("Choose a local WAV output and a nonempty render shorter than four minutes.");
+        return QStringLiteral("Choose a local audio output and a nonempty render shorter than four minutes.");
     }
     const QFileInfo target(destination.toLocalFile());
-    if (target.suffix().compare("wav", Qt::CaseInsensitive) != 0 || target.isSymbolicLink()
-        || target.absoluteFilePath() == QFileInfo(scorePath.toQString()).absoluteFilePath()) {
-        return QStringLiteral("Choose a .wav export path separate from the score copy.");
+    const bool mp3 = target.suffix().compare("mp3", Qt::CaseInsensitive) == 0;
+    if ((mp3Requested && !mp3) || (!mp3Requested && target.suffix().compare("wav", Qt::CaseInsensitive) != 0)
+        || target.isSymbolicLink() || target.absoluteFilePath() == QFileInfo(scorePath.toQString()).absoluteFilePath()) {
+        return QStringLiteral("Choose a .wav or supported .mp3 output path separate from the score copy.");
+    }
+    QByteArray audio;
+    if (mp3) {
+#ifdef MUE_VOICE_STUDIO_MP3
+        audio = voice::encodeProcessedMp3(samples, rate);
+        if (audio.isEmpty()) {
+            return QStringLiteral("MP3 encoding failed; export WAV instead.");
+        }
+#else
+        return QStringLiteral("This build has no MP3 encoder; export WAV instead.");
+#endif
+    } else {
+        audio = makeVoiceWav(samples, rate);
     }
     QSaveFile file(target.absoluteFilePath());
     if (!file.open(QIODevice::WriteOnly)) {
-        return QStringLiteral("Cannot write this WAV output path.");
+        return QStringLiteral("Cannot write this audio output path.");
     }
-    const QByteArray wav = makeVoiceWav(samples, rate);
-    if (file.write(wav) != wav.size() || !file.commit()) {
-        return QStringLiteral("WAV export failed; check free disk space and permissions.");
+    if (file.write(audio) != audio.size() || !file.commit()) {
+        return QStringLiteral("Audio export failed; check free disk space and permissions.");
     }
     return {};
 }
@@ -1181,7 +1194,8 @@ QString NotationPaintView::exportSelectedVoicePreview(const QUrl& destination, b
     return writeVoiceExport(destination, samples, m_processingRate, studioProjectSession()->project()->path());
 }
 
-QString NotationPaintView::exportVoiceStudioWav(const QUrl& destination, const QVariantList& staves, int transpose)
+QString NotationPaintView::exportVoiceStudioAudio(const QUrl& destination, const QVariantList& staves, int transpose,
+                                                  bool followDynamics, bool mp3)
 {
     if (!m_voiceStudioCopy || m_voiceSamples.empty() || !notation() || !studioProjectSession()->project()
         || staves.isEmpty() || staves.size() > 4 || transpose < -24 || transpose > 24) {
@@ -1219,6 +1233,7 @@ QString NotationPaintView::exportVoiceStudioWav(const QUrl& destination, const Q
         return QStringLiteral("Tag a voiced source slice on at least one written note first.");
     }
     const auto& timeline = score->tempoTimeline(true);
+    const voice::StaffDynamics dynamics = followDynamics ? voice::collectWrittenDynamics(score) : voice::StaffDynamics();
     const int maxFrames = 240 * m_processingRate;
     std::vector<float> mix;
     std::map<std::pair<int, int>, voice::SourcePlan> preparedSlices;
@@ -1309,7 +1324,8 @@ QString NotationPaintView::exportVoiceStudioWav(const QUrl& destination, const Q
                             const float warmth = role == "B" ? 0.8f : role == "A" ? 0.6f : role == "T" ? 0.5f : 0.3f;
                             const float brightness = role == "S" ? 0.75f : role == "T" ? 0.5f : 0.3f;
                             float low = 0;
-                            const float gain = 0.7f / std::sqrt(float(staves.size()));
+                            const float gain = 0.7f * voice::writtenGainAt(dynamics, staff, tick)
+                                               / std::sqrt(float(staves.size()));
                             for (int i = 0; i < frames; ++i) {
                                 low += 0.15f * (voiced[i] - low);
                                 const float shaped = voiced[i] * (0.75f + warmth * 0.1f)
@@ -1326,14 +1342,15 @@ QString NotationPaintView::exportVoiceStudioWav(const QUrl& destination, const Q
         return QStringLiteral("The chosen staff subset contains no pitched written notes.");
     }
     mix.resize(std::min(size_t(maxFrames), mix.size() + size_t(m_processingRate / 20)), 0);
-    const QString error = writeVoiceExport(destination, mix, m_processingRate, project->path());
+    const QString error = writeVoiceExport(destination, mix, m_processingRate, project->path(), mp3);
     if (!error.isEmpty()) {
         return error;
     }
     root.insert("includedStaves", QJsonArray::fromVariantList(staves));
     root.insert("transposeSemitones", transpose);
+    root.insert("followDynamics", followDynamics);
     if (!project->setVoiceStudioData(QJsonDocument(root).toJson(QJsonDocument::Compact), project->voiceStudioSource())) {
-        return QStringLiteral("WAV exported, but arrangement settings could not be saved in the score copy.");
+        return QStringLiteral("Audio exported, but arrangement settings could not be saved in the score copy.");
     }
     emit voiceStudioChanged();
     scheduleRedraw();
@@ -1567,7 +1584,7 @@ QString NotationPaintView::voiceStudioNoteProgression(const QVariantList& staves
     return lines.join(QStringLiteral("\n\n"));
 }
 
-QString NotationPaintView::saveVoiceStudioArrangement(const QVariantList& staves, int transpose)
+QString NotationPaintView::saveVoiceStudioArrangement(const QVariantList& staves, int transpose, bool followDynamics)
 {
     if (!m_voiceStudioCopy || !studioProjectSession()->project() || staves.isEmpty() || staves.size() > 4
         || transpose < -24 || transpose > 24 || !notation() || !notation()->elements()->msScore()) {
@@ -1590,6 +1607,7 @@ QString NotationPaintView::saveVoiceStudioArrangement(const QVariantList& staves
     QJsonObject root = QJsonDocument::fromJson(project->voiceStudioSession()).object();
     root.insert("includedStaves", QJsonArray::fromVariantList(staves));
     root.insert("transposeSemitones", transpose);
+    root.insert("followDynamics", followDynamics);
     if (!project->setVoiceStudioData(QJsonDocument(root).toJson(QJsonDocument::Compact), project->voiceStudioSource())) {
         return QStringLiteral("Could not store the arrangement in the copied score.");
     }

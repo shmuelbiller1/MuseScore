@@ -33,6 +33,7 @@
 #include <utility>
 
 #include "abstractnotationpaintview.h"
+#include "voicestudiorange.h"
 #include "project/inotationproject_fwd.h"
 
 namespace mu::notation {
@@ -43,6 +44,7 @@ class NotationPaintView : public AbstractNotationPaintView
     Q_PROPERTY(bool voiceStudioCopy READ voiceStudioCopy NOTIFY voiceStudioChanged)
     Q_PROPERTY(QString voiceStudioCopyPath READ voiceStudioCopyPath NOTIFY voiceStudioChanged)
     Q_PROPERTY(bool voiceStudioHasAudio READ voiceStudioHasAudio NOTIFY voiceStudioChanged)
+    Q_PROPERTY(bool voiceStudioMp3Available READ voiceStudioMp3Available CONSTANT)
     Q_PROPERTY(int voiceStudioAudioLengthMs READ voiceStudioAudioLengthMs NOTIFY voiceStudioChanged)
     Q_PROPERTY(int voiceStudioStaffCount READ voiceStudioStaffCount NOTIFY voiceStudioChanged)
     Q_PROPERTY(bool voiceRecording READ voiceRecording NOTIFY voiceRecordingChanged)
@@ -54,6 +56,7 @@ public:
     bool voiceStudioCopy() const;
     QString voiceStudioCopyPath() const;
     bool voiceStudioHasAudio() const;
+    bool voiceStudioMp3Available() const;
     int voiceStudioAudioLengthMs() const;
     int voiceStudioStaffCount() const;
     Q_INVOKABLE int voiceStudioMeasureCount() const;
@@ -73,11 +76,12 @@ public:
     Q_INVOKABLE QString removeSelectedVoiceTag();
     Q_INVOKABLE QVariantMap selectedVoiceClip() const;
     Q_INVOKABLE QString updateSelectedVoiceClip(int offsetTicks, int stretchPercent, int outputPitch);
-    Q_INVOKABLE QString exportVoiceStudioWav(const QUrl& destination, const QVariantList& staves, int transpose);
+    Q_INVOKABLE QString exportVoiceStudioAudio(const QUrl& destination, const QVariantList& staves, int transpose, bool followDynamics,
+                                               bool mp3);
     Q_INVOKABLE QString exportSelectedVoicePreview(const QUrl& destination, bool processed, int transpose);
     Q_INVOKABLE QString voiceStudioNoteProgression(const QVariantList& staves, int transpose) const;
     Q_INVOKABLE QVariantMap voiceStudioArrangement() const;
-    Q_INVOKABLE QString saveVoiceStudioArrangement(const QVariantList& staves, int transpose);
+    Q_INVOKABLE QString saveVoiceStudioArrangement(const QVariantList& staves, int transpose, bool followDynamics);
 
 signals:
     void voiceStudioChanged();
@@ -95,8 +99,8 @@ private:
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseUngrabEvent() override;
-    bool voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, int& tick, int& staff) const;
-    QString selectVoiceNoteSpan(int firstTick, int lastTick, int staff, bool requireCopyable = true);
+    bool voiceNoteAt(const QPointF& pos, bool nearest, int staffOnly, voice_range::Endpoint& endpoint) const;
+    QString selectVoiceNoteSpan(voice_range::Endpoint start, voice_range::Endpoint end, bool requireCopyable = true);
     void updateVoiceRangeDrag();
     void refreshVoiceStudio(const QByteArray& sourceOverride = {});
     std::vector<float> selectedVoiceSamples(bool processed, int transpose, QString& error) const;
@@ -122,9 +126,9 @@ private:
     bool m_voiceStudioCopy = false;
     bool m_voiceRangeDragMode = false;
     bool m_voiceRangeDragging = false;
-    int m_voiceStartTick = -1;
+    voice_range::Endpoint m_voiceStartEndpoint;
     int m_voiceStartStaff = -1;
-    int m_voiceLastTick = -1;
+    voice_range::Endpoint m_voiceLastEndpoint;
     QPointF m_voiceDragPosition;
     QPointF m_voiceDragOrigin;
     QTimer m_voiceRangeScrollTimer;

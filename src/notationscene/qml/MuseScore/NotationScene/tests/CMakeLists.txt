@@ -29,6 +29,7 @@ set(MODULE_TEST_SRC
     ${CMAKE_CURRENT_LIST_DIR}/environment.cpp
     ${CMAKE_CURRENT_LIST_DIR}/notationviewinputcontroller_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/voicestudiodsp_tests.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/voicestudiodynamics_tests.cpp
     ${CMAKE_CURRENT_LIST_DIR}/voicestudiorange_tests.cpp
 )
 
@@ -39,5 +40,10 @@ set(MODULE_TEST_LINK
 )
 
 set(MODULE_TEST_DATA_ROOT ${CMAKE_CURRENT_LIST_DIR})
+
+if(TARGET libmp3lame::libmp3lame)
+    list(APPEND MODULE_TEST_LINK libmp3lame::libmp3lame)
+    list(APPEND MODULE_TEST_DEF MUE_VOICE_STUDIO_MP3)
+endif()
 
 include(SetupGTest)
