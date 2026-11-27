@@ -41,9 +41,9 @@ set(MODULE_TEST_LINK
 
 set(MODULE_TEST_DATA_ROOT ${CMAKE_CURRENT_LIST_DIR})
 
-include(SetupGTest)
-
 if(TARGET libmp3lame::libmp3lame)
-    target_link_libraries(${MODULE_TEST} PRIVATE libmp3lame::libmp3lame)
-    target_compile_definitions(${MODULE_TEST} PRIVATE MUE_VOICE_STUDIO_MP3)
+    list(APPEND MODULE_TEST_LINK libmp3lame::libmp3lame)
+    list(APPEND MODULE_TEST_DEF MUE_VOICE_STUDIO_MP3)
 endif()
+
+include(SetupGTest)
